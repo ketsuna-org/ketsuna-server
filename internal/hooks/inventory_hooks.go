@@ -2,7 +2,6 @@ package hooks
 
 import (
 	"fmt"
-	"log"
 
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/apis"
@@ -41,9 +40,9 @@ func registerInventoryHooks(app *pocketbase.PocketBase) {
 			}
 			company.Set("balance", current-totalCost)
 			if err := e.App.Save(company); err != nil {
-				log.Println("[PURCHASE] erreur save company:", err)
+				e.App.Logger().Error("[PURCHASE] erreur save company", "error", err)
 			}
-			log.Printf("[PURCHASE] Company %s purchased item %s x%d for %d€\n", companyId, itemId, qty, totalCost)
+			e.App.Logger().Info("[PURCHASE] Company purchased item", "companyId", companyId, "itemId", itemId, "qty", qty, "totalCost", totalCost)
 		}
 
 		// If inventory exists, update quantity and return an error informing about it
@@ -52,7 +51,7 @@ func registerInventoryHooks(app *pocketbase.PocketBase) {
 			curr := existing.GetInt("quantity")
 			existing.Set("quantity", curr+qty)
 			if err := e.App.Save(existing); err != nil {
-				log.Println("Erreur mise à jour inventaire:", err)
+				e.App.Logger().Error("Erreur mise à jour inventaire", "error", err)
 			}
 			return apis.NewBadRequestError(fmt.Sprintf("Item déjà en inventaire. Quantité mise à jour: %d", curr+qty), nil)
 		}
@@ -89,9 +88,9 @@ func registerInventoryHooks(app *pocketbase.PocketBase) {
 			}
 			company.Set("balance", bal-totalCost)
 			if err := e.App.Save(company); err != nil {
-				log.Println("[PURCHASE-UPDATE] erreur save company:", err)
+				e.App.Logger().Error("[PURCHASE-UPDATE] erreur save company", "error", err)
 			}
-			log.Printf("[PURCHASE-UPDATE] Company %s purchased %d more items for %d€\n", company.Id, added, totalCost)
+			e.App.Logger().Info("[PURCHASE-UPDATE] Company purchased more items", "companyId", company.Id, "added", added, "totalCost", totalCost)
 		}
 
 		if newQ < 0 {
@@ -104,7 +103,7 @@ func registerInventoryHooks(app *pocketbase.PocketBase) {
 	app.OnRecordAfterUpdateSuccess("inventory").BindFunc(func(e *core.RecordEvent) error {
 		if e.Record.GetInt("quantity") == 0 {
 			if err := e.App.Delete(e.Record); err != nil {
-				log.Println("Erreur lors de la suppression de l'inventaire:", err)
+				e.App.Logger().Error("Erreur lors de la suppression de l'inventaire", "error", err)
 			}
 		}
 		return nil

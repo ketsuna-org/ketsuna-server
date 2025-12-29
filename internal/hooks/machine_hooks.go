@@ -2,7 +2,6 @@ package hooks
 
 import (
 	"fmt"
-	"log"
 
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/apis"
@@ -43,7 +42,7 @@ func registerMachineHooks(app *pocketbase.PocketBase, inv *InventoryLogic) {
 			return apis.NewBadRequestError(fmt.Sprintf("Erreur lors de la mise à jour de l'inventaire: %v", err), nil)
 		}
 
-		log.Printf("[MACHINES] Machine %s assignée pour company %s. Stock déduit.\n", machineItemId, companyId)
+		app.Logger().Info("[MACHINES] Machine assigned", "machineId", machineItemId, "companyId", companyId)
 		return nil
 	})
 
@@ -71,9 +70,9 @@ func registerMachineHooks(app *pocketbase.PocketBase, inv *InventoryLogic) {
 
 		if companyId != "" && machineItemId != "" {
 			if err := inv.UpdateInventory(companyId, machineItemId, 1); err != nil {
-				log.Printf("[MACHINES] Erreur remise en stock: %v\n", err)
+				app.Logger().Error("[MACHINES] Erreur remise en stock", "error", err)
 			} else {
-				log.Printf("[MACHINES] Assignation supprimée. Machine %s renvoyée au stock.\n", machineItemId)
+				app.Logger().Info("[MACHINES] Assignation supprimée. Machine renvoyée au stock", "machineId", machineItemId)
 			}
 		}
 		return nil

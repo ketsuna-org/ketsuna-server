@@ -2,7 +2,6 @@ package hooks
 
 import (
 	"fmt"
-	"log"
 	"math"
 	"math/rand"
 	"time"
@@ -110,7 +109,7 @@ func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
 					if err == nil {
 						assignment.Set("production_started_at", types.NowDateTime())
 						l.app.Save(assignment)
-						log.Printf("[ECONOMY] Machine %s: Production Started.", machineItem.GetString("name"))
+						l.app.Logger().Info("[ECONOMY] Machine Production Started", "machine", machineItem.GetString("name"))
 					}
 				} else {
 					// Check if finished
@@ -121,9 +120,9 @@ func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
 							// Reset
 							assignment.Set("production_started_at", types.DateTime{}) // Zero
 							l.app.Save(assignment)
-							log.Printf("[ECONOMY] Machine %s: Production Terminée (+%d).", machineItem.GetString("name"), finalQty)
+							l.app.Logger().Info("[ECONOMY] Machine Production Finished", "machine", machineItem.GetString("name"), "qty", finalQty)
 						} else {
-							log.Printf("[ECONOMY] Machine %s: Erreur fin production: %v", machineItem.GetString("name"), err)
+							l.app.Logger().Error("[ECONOMY] Machine Production Error", "machine", machineItem.GetString("name"), "error", err)
 						}
 					}
 				}
@@ -131,7 +130,7 @@ func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
 				// Short Production (Immediate)
 				_, err := l.inventory.ProduceItem(companyId, recipeId, finalQty)
 				if err == nil {
-					log.Printf("[ECONOMY] Machine %s (Rapid): +%d", machineItem.GetString("name"), finalQty)
+					l.app.Logger().Info("[ECONOMY] Machine Rapid Production", "machine", machineItem.GetString("name"), "qty", finalQty)
 				}
 			}
 
@@ -139,7 +138,7 @@ func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
 			// --- PASSIVE PRODUCTION ---
 			err := l.inventory.UpdateInventory(companyId, productId, finalQty)
 			if err == nil {
-				log.Printf("[ECONOMY] Machine %s (Passive): +%d", machineItem.GetString("name"), finalQty)
+				l.app.Logger().Info("[ECONOMY] Machine Passive Production", "machine", machineItem.GetString("name"), "qty", finalQty)
 			}
 		}
 	}
@@ -212,7 +211,7 @@ func (l *EconomyLogic) DeductDailyPayroll() {
 		l.app.Save(company)
 
 		if monthlyCost > 0 {
-			log.Printf("[PAYROLL] %s: -%.2f€ (Salaires: %d emp, Machines: %d)", company.GetString("name"), monthlyCost, len(employees), len(machines))
+			l.app.Logger().Info("[PAYROLL] Deducted", "company", company.GetString("name"), "amount", monthlyCost, "employees", len(employees), "machines", len(machines))
 		}
 	}
 }

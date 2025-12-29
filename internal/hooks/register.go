@@ -33,18 +33,12 @@ func RegisterHooks(app *pocketbase.PocketBase) {
 }
 
 func startEconomyTicker(app *pocketbase.PocketBase, eco *EconomyLogic) {
-	// Start minute ticker for production
+	// 1. Fast Ticker (Sub-minute tasks) - Keep using Ticker
+	// User set this to 20s
 	go func() {
-		t := time.NewTicker(1 * time.Minute)
+		t := time.NewTicker(20 * time.Second)
 		defer t.Stop()
 		for range t.C {
-			// Logic moved to economy_cron.go, but we need to fetch companies here to call logic on them
-			// Or we could move the loop to economy_cron.go?
-			// Let's keep the loop here for now as it's the "Cron" entrypoint, calling logic.
-			// Actually, let's keep it simple.
-			// We can export a function `StartEconomyBackgroundJobs(app, eco)`?
-			// But for now, just inline the calls to the new methods.
-
 			companies, err := app.FindRecordsByFilter("companies", "", "", 0, 0)
 			if err == nil {
 				for _, c := range companies {
@@ -55,13 +49,11 @@ func startEconomyTicker(app *pocketbase.PocketBase, eco *EconomyLogic) {
 		}
 	}()
 
-	// Start daily ticker for market prices
-	go func() {
-		t := time.NewTicker(24 * time.Hour)
-		defer t.Stop()
-		for range t.C {
-			eco.UpdateMarketPrices()
-			eco.DeductDailyPayroll()
-		}
-	}()
+	// 2. Daily Cron (Tasks > 1h) - Use PocketBase Cron
+	// Runs at 06:00 UTC every day
+	app.Cron().Add("daily_payroll_market", "0 6 * * *", func() {
+		app.Logger().Info("[CRON] Executing Daily Payroll & Market Update (06:00 UTC)")
+		eco.UpdateMarketPrices()
+		eco.DeductDailyPayroll()
+	})
 }

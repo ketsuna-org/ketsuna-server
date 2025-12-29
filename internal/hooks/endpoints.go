@@ -1,8 +1,6 @@
 package hooks
 
 import (
-	"log"
-
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
@@ -50,7 +48,7 @@ func RegisterEndpoints(app *pocketbase.PocketBase, inv *InventoryLogic, eco *Eco
 			// Logic
 			result, err := inv.ProduceItem(companyId, data.RecipeId, data.Quantity)
 			if err != nil {
-				log.Printf("[WORKSHOP] Erreur production: %v", err)
+				app.Logger().Error("[WORKSHOP] Erreur production", "error", err)
 				return apis.NewBadRequestError(err.Error(), nil)
 			}
 

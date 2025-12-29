@@ -2,7 +2,6 @@ package hooks
 
 import (
 	"fmt"
-	"log"
 
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/apis"
@@ -70,7 +69,7 @@ func registerCompanyHooks(app *pocketbase.PocketBase) {
 
 		user, err := e.App.FindRecordById("users", ceoId)
 		if err != nil {
-			log.Println("Erreur mise à jour owned_companies:", err)
+			e.App.Logger().Error("Erreur mise à jour owned_companies", "error", err)
 			return nil
 		}
 
@@ -80,7 +79,7 @@ func registerCompanyHooks(app *pocketbase.PocketBase) {
 			user.Set("active_company", company.Id)
 		}
 		if err := e.App.Save(user); err != nil {
-			log.Println("Erreur mise à jour owned_companies (save):", err)
+			e.App.Logger().Error("Erreur mise à jour owned_companies (save)", "error", err)
 		}
 		return nil
 	})

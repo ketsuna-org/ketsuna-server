@@ -2,7 +2,6 @@ package hooks
 
 import (
 	"fmt"
-	"log"
 
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/apis"
@@ -99,7 +98,7 @@ func registerEmployeeHooks(app *pocketbase.PocketBase) {
 		}
 		company, err := e.App.FindRecordById("companies", employer)
 		if err != nil {
-			log.Println("[Hooks] Erreur après création d'employé (company not found):", err)
+			e.App.Logger().Error("[Hooks] Erreur après création d'employé (company not found)", "error", err)
 			return nil
 		}
 		salary := record.GetInt("salary")
@@ -107,9 +106,9 @@ func registerEmployeeHooks(app *pocketbase.PocketBase) {
 		current := company.GetInt("balance")
 		company.Set("balance", current-hiringFee)
 		if err := e.App.Save(company); err != nil {
-			log.Println("[Hooks] Erreur save company after hire:", err)
+			e.App.Logger().Error("[Hooks] Erreur save company after hire", "error", err)
 		}
-		log.Printf("[Hooks] Frais de recrutement déduits (-%d€) pour %s\n", hiringFee, company.GetString("name"))
+		e.App.Logger().Info("[Hooks] Frais de recrutement déduits", "amount", hiringFee, "company", company.GetString("name"))
 		return nil
 	})
 

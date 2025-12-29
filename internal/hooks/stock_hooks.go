@@ -2,7 +2,6 @@ package hooks
 
 import (
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/pocketbase/pocketbase"
@@ -121,9 +120,9 @@ func registerStockHooks(app *pocketbase.PocketBase) {
 		sh.Set("stock", r.Id)
 		sh.Set("quantity", ceoShares)
 		if err := app.Save(sh); err != nil {
-			log.Println("Erreur création actionnaire CEO:", err)
+			app.Logger().Error("Erreur création actionnaire CEO", "error", err)
 		} else {
-			log.Printf("Actionnaire créé: %d actions pour le CEO via %s\n", ceoShares, holderCompany.GetString("name"))
+			app.Logger().Info("Actionnaire créé", "ceoShares", ceoShares, "holderCompany", holderCompany.GetString("name"))
 		}
 
 		return nil

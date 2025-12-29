@@ -2,7 +2,6 @@ package hooks
 
 import (
 	"fmt"
-	"log"
 
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/apis"
@@ -82,7 +81,7 @@ func registerCompanyTechHooks(app *pocketbase.PocketBase) {
 		company.Set("tech_points", curr+refund)
 		app.Save(company)
 
-		log.Printf("Technologie %s supprimée. Remboursement: %d tech points\n", tech.GetString("name"), refund)
+		app.Logger().Info("Technologie supprimée. Remboursement effectué.", "technology", tech.GetString("name"), "refund", refund)
 		return nil
 	})
 }
