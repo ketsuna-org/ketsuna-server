@@ -12,7 +12,7 @@ import (
 )
 
 func main() {
-
+ 
 	app := pocketbase.New()
 
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {

@@ -8,7 +8,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 )
 
-func RegisterEndpoints(app *pocketbase.PocketBase, inv *InventoryLogic) {
+func RegisterEndpoints(app *pocketbase.PocketBase, inv *InventoryLogic, eco *EconomyLogic) {
 	app.OnServe().BindFunc(func(e *core.ServeEvent) error {
 
 		// WORKSHOP Custom Endpoints
@@ -111,6 +111,36 @@ func RegisterEndpoints(app *pocketbase.PocketBase, inv *InventoryLogic) {
 				"techGain":      result.TechGain,
 			})
 
+		})
+
+		// COMPANY FINANCE (ported from JS)
+		e.Router.POST("/api/company/finance", func(c *core.RequestEvent) error {
+			authRecord := c.Auth
+			if authRecord == nil {
+				return apis.NewUnauthorizedError("Vous devez être connecté.", nil)
+			}
+
+			data := struct {
+				CompanyId string `json:"companyId" form:"companyId"`
+			}{}
+			if err := c.BindBody(&data); err != nil {
+				return apis.NewBadRequestError("Corps JSON invalide", err)
+			}
+
+			companyId := data.CompanyId
+			if companyId == "" {
+				companyId = authRecord.GetString("active_company")
+				if companyId == "" {
+					return apis.NewBadRequestError("Aucune entreprise active", nil)
+				}
+			}
+
+			breakdown, err := eco.CalculateCompanyFinance(companyId)
+			if err != nil {
+				return apis.NewBadRequestError(err.Error(), nil)
+			}
+
+			return c.JSON(200, breakdown)
 		})
 
 		return e.Next()

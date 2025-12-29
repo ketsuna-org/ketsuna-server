@@ -53,3 +53,8 @@ devenv.local.yaml
 # pre-commit
 .pre-commit-config.yaml
 server
+
+
+pb_data/
+pb_hooks/
+pb_migrations/
