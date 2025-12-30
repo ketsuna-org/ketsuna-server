@@ -8,7 +8,8 @@ import (
 )
 
 // package-local RNG (preferred over global rand.Seed as of Go 1.20)
-var rng = rand.New(rand.NewSource(time.Now().UnixNano()))
+// var rng = rand.New(rand.NewSource(time.Now().UnixNano()))
+
 
 // RegisterHooks registers a subset of game hooks (companies, employees, inventory, recipes)
 // and starts a simple economy ticker (cron-like) to simulate the JS hooks behavior.

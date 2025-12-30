@@ -6,11 +6,13 @@ import (
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
+	"math/rand"
 )
 
 func registerEmployeeHooks(app *pocketbase.PocketBase) {
 	// Create: generate random stats and validate company balance
 	app.OnRecordCreateRequest("employees").BindFunc(func(e *core.RecordRequestEvent) error {
+		app.Logger().Info("[Hooks] Employee create request received", "auth", e.Auth)
 		r := e.Record
 
 		// employer either provided or from auth.active_company
@@ -21,18 +23,20 @@ func registerEmployeeHooks(app *pocketbase.PocketBase) {
 		}
 
 		if employer == "" {
+			app.Logger().Error("[Hooks] Employee creation failed: No employer found")
 			return apis.NewBadRequestError("L'employeur (employer) est requis", nil)
 		}
+		app.Logger().Info("[Hooks] Employee creation - Employer determined", "employerId", employer)
 
 		// generate
 		first := []string{"Jean", "Pierre", "Paul", "Jacques", "Marie", "Sophie", "Lucie", "Camille", "Thomas", "Nicolas", "Julien", "Antoine", "Lucas", "Emma", "Léa", "Chloé", "Manon", "Alex", "Maxime", "Léo", "Sarah", "Julie", "Hugo", "Gabriel", "Arthur"}
 		last := []string{"Dupont", "Durand", "Martin", "Bernard", "Petit", "Robert", "Richard", "Simon", "Michel", "Lefebvre", "Moreau", "Laurent", "Garcia", "Roux", "David", "Bertrand", "Garnier", "Lambert", "Faure", "Rousseau", "Blanc", "Guerin", "Boyer", "Chevalier", "Mathieu"}
 		postes := []string{"Ouvrier", "Technicien", "Ingénieur", "Superviseur", "Manutentionnaire", "Opérateur", "Analyste", "Logisticien", "Contremaître", "Directeur"}
 
-		r.Set("name", fmt.Sprintf("%s %s", first[rng.Intn(len(first))], last[rng.Intn(len(last))]))
-		r.Set("poste", postes[rng.Intn(len(postes))])
+		r.Set("name", fmt.Sprintf("%s %s", first[rand.Intn(len(first))], last[rand.Intn(len(last))]))
+		r.Set("poste", postes[rand.Intn(len(postes))])
 
-		randVal := rng.Float64()
+		randVal := rand.Float64()
 		rarity := 0
 		switch {
 		case randVal > 0.99:
@@ -55,7 +59,7 @@ func registerEmployeeHooks(app *pocketbase.PocketBase) {
 		default:
 			efficiencyBase = 1.05
 		}
-		eff := efficiencyBase * (0.9 + rng.Float64()*0.2)
+		eff := efficiencyBase * (0.9 + rand.Float64()*0.2)
 		r.Set("efficiency", fmt.Sprintf("%.2f", eff))
 
 		var salaryBase int
@@ -69,7 +73,7 @@ func registerEmployeeHooks(app *pocketbase.PocketBase) {
 		default:
 			salaryBase = 26
 		}
-		salary := int(float64(salaryBase) * (0.9 + rng.Float64()*0.2))
+		salary := int(float64(salaryBase) * (0.9 + rand.Float64()*0.2))
 		r.Set("salary", salary)
 
 		// validate company balance
@@ -78,13 +82,21 @@ func registerEmployeeHooks(app *pocketbase.PocketBase) {
 			return apis.NewBadRequestError("Company introuvable ou erreur de validation", nil)
 		}
 
+		// Validate CEO ownership
+		if e.Auth != nil && !e.Auth.IsSuperuser() && company.GetString("ceo") != e.Auth.Id {
+			app.Logger().Error("[Hooks] creating employee forbidden: user is not CEO", "user", e.Auth.Id, "ceo", company.GetString("ceo"))
+			return apis.NewForbiddenError("Vous n'êtes pas le PDG de cette entreprise", nil)
+		}
+
 		hiringFee := salary * 5
 		requiredReserve := salary * 30
 		totalRequired := hiringFee + requiredReserve
 		balance := company.GetInt("balance")
 		if balance < totalRequired {
+            app.Logger().Error("[Hooks] Employee creation failed: Insufficient balance", "balance", balance, "required", totalRequired)
 			return apis.NewBadRequestError(fmt.Sprintf("Balance insuffisante. %d€ requis", totalRequired), nil)
 		}
+        app.Logger().Info("[Hooks] Employee validation success, proceeding to create", "name", r.GetString("name"), "salary", salary)
 
 		return nil
 	})
