@@ -51,12 +51,17 @@ func registerMachineHooks(app *pocketbase.PocketBase, inv *InventoryLogic) {
 		employeeIds := record.GetStringSlice("employees")
 
 		if len(employeeIds) > 0 {
+			// Check if any employee is already assigned to ANOTHER machine
 			for _, empId := range employeeIds {
-				// exclude current machine
-				filter := fmt.Sprintf("id != '%s' && employees ~ '%s'", record.Id, empId)
-				found, err := app.FindRecordsByFilter("machines", filter, "", 1, 0)
-				if err == nil && len(found) > 0 {
-					return apis.NewBadRequestError("Un ou plusieurs employés sont déjà assignés à une autre machine.", nil)
+				// We search for ANY machine containing this employee
+				found, err := app.FindRecordsByFilter("machines", fmt.Sprintf("employees ~ '%s'", empId), "", 10, 0)
+				if err == nil {
+					for _, m := range found {
+						if m.Id != record.Id {
+							app.Logger().Error("[MACHINES] Validation failed: Employee already busy", "empId", empId, "otherMachine", m.Id)
+							return apis.NewBadRequestError("Un ou plusieurs employés sont déjà assignés à une autre machine.", nil)
+						}
+					}
 				}
 			}
 		}
