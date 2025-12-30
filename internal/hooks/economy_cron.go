@@ -109,7 +109,6 @@ func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
 					if err == nil {
 						assignment.Set("production_started_at", types.NowDateTime())
 						l.app.Save(assignment)
-						l.app.Logger().Info("[ECONOMY] Machine Production Started", "machine", machineItem.GetString("name"))
 					}
 				} else {
 					// Check if finished
@@ -120,7 +119,6 @@ func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
 							// Reset
 							assignment.Set("production_started_at", types.DateTime{}) // Zero
 							l.app.Save(assignment)
-							l.app.Logger().Info("[ECONOMY] Machine Production Finished", "machine", machineItem.GetString("name"), "qty", finalQty)
 						} else {
 							l.app.Logger().Error("[ECONOMY] Machine Production Error", "machine", machineItem.GetString("name"), "error", err)
 						}
@@ -128,18 +126,12 @@ func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
 				}
 			} else {
 				// Short Production (Immediate)
-				_, err := l.inventory.ProduceItem(companyId, recipeId, finalQty)
-				if err == nil {
-					l.app.Logger().Info("[ECONOMY] Machine Rapid Production", "machine", machineItem.GetString("name"), "qty", finalQty)
-				}
+				_, _ = l.inventory.ProduceItem(companyId, recipeId, finalQty)
 			}
 
 		} else if productId != "" {
 			// --- PASSIVE PRODUCTION ---
-			err := l.inventory.UpdateInventory(companyId, productId, finalQty)
-			if err == nil {
-				l.app.Logger().Info("[ECONOMY] Machine Passive Production", "machine", machineItem.GetString("name"), "qty", finalQty)
-			}
+			_ = l.inventory.UpdateInventory(companyId, productId, finalQty)
 		}
 	}
 
