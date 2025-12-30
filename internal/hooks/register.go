@@ -1,7 +1,6 @@
 package hooks
 
 import (
-	"math/rand"
 	"time"
 
 	"github.com/pocketbase/pocketbase"
@@ -10,12 +9,12 @@ import (
 // package-local RNG (preferred over global rand.Seed as of Go 1.20)
 // var rng = rand.New(rand.NewSource(time.Now().UnixNano()))
 
-
 // RegisterHooks registers a subset of game hooks (companies, employees, inventory, recipes)
 // and starts a simple economy ticker (cron-like) to simulate the JS hooks behavior.
 func RegisterHooks(app *pocketbase.PocketBase) {
 	invLogic := NewInventoryLogic(app)
 	ecoLogic := NewEconomyLogic(app, invLogic)
+	empLogic := NewEmployeeLogic(app)
 
 	registerCompanyHooks(app)
 	registerEmployeeHooks(app)
@@ -27,7 +26,7 @@ func RegisterHooks(app *pocketbase.PocketBase) {
 	registerMachineHooks(app, invLogic)
 
 	// Register API Endpoints
-	RegisterEndpoints(app, invLogic, ecoLogic)
+	RegisterEndpoints(app, invLogic, ecoLogic, empLogic)
 
 	// Start Background Jobs
 	startEconomyTicker(app, ecoLogic)

@@ -9,7 +9,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 )
 
-func RegisterEndpoints(app *pocketbase.PocketBase, inv *InventoryLogic, eco *EconomyLogic) {
+func RegisterEndpoints(app *pocketbase.PocketBase, inv *InventoryLogic, eco *EconomyLogic, emp *EmployeeLogic) {
 	app.OnServe().BindFunc(func(e *core.ServeEvent) error {
 
 		// WORKSHOP Custom Endpoints
@@ -290,6 +290,49 @@ func RegisterEndpoints(app *pocketbase.PocketBase, inv *InventoryLogic, eco *Eco
 				"newLevel": currentLevel + 1,
 				"cost":     cost,
 				"repReq":   repReq,
+			})
+		})
+
+		// EMPLOYEE HIRE Custom Endpoint
+		e.Router.POST("/api/employees/hire", func(c *core.RequestEvent) error {
+			authRecord := c.Auth
+			if authRecord == nil {
+				return apis.NewUnauthorizedError("Vous devez être connecté.", nil)
+			}
+
+			data := struct {
+				CompanyId string `json:"companyId" form:"companyId"`
+			}{}
+			if err := c.BindBody(&data); err != nil {
+				return apis.NewBadRequestError("Corps JSON invalide", err)
+			}
+
+			companyId := data.CompanyId
+			if companyId == "" {
+				return apis.NewBadRequestError("companyId requis", nil)
+			}
+
+			// Validate CEO ownership
+			company, err := app.FindRecordById("companies", companyId)
+			if err != nil {
+				return apis.NewBadRequestError("Company introuvable", nil)
+			}
+
+			if !authRecord.IsSuperuser() && company.GetString("ceo") != authRecord.Id {
+				return apis.NewForbiddenError("Vous n'êtes pas le PDG de cette entreprise", nil)
+			}
+
+			// Hire
+			hired, err := emp.HireEmployee(companyId)
+			if err != nil {
+				return apis.NewBadRequestError(err.Error(), nil)
+			}
+
+			return c.JSON(200, map[string]interface{}{
+				"success": true,
+				"message": "Employé recruté avec succès",
+				"record":  hired.Record,
+				"cost":    hired.Cost,
 			})
 		})
 
