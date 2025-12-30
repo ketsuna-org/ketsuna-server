@@ -55,5 +55,6 @@ func startEconomyTicker(app *pocketbase.PocketBase, eco *EconomyLogic) {
 		app.Logger().Info("[CRON] Executing Daily Payroll & Market Update (06:00 UTC)")
 		eco.UpdateMarketPrices()
 		eco.DeductDailyPayroll()
+		eco.SellReserveItems()
 	})
 }

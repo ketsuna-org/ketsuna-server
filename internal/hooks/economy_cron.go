@@ -216,3 +216,46 @@ func (l *EconomyLogic) DeductDailyPayroll() {
 		}
 	}
 }
+
+func (l *EconomyLogic) SellReserveItems() {
+	reserves, _ := l.app.FindRecordsByFilter("reserve", "", "", 0, 0)
+	if len(reserves) == 0 {
+		return
+	}
+
+	for _, res := range reserves {
+		companyId := res.GetString("company")
+		itemId := res.GetString("item")
+		qty := res.GetInt("quantity")
+
+		if qty <= 0 {
+			continue
+		}
+
+		item, err := l.app.FindRecordById("items", itemId)
+		if err != nil {
+			continue
+		}
+
+		price := item.GetFloat("base_price")
+		revenue := float64(qty) * price
+
+		company, err := l.app.FindRecordById("companies", companyId)
+		if err != nil {
+			continue
+		}
+
+		// Update Company Balance
+		newBalance := company.GetFloat("balance") + revenue
+		company.Set("balance", newBalance)
+		l.app.Save(company)
+
+		// Delete Reserve Record (Emptying it)
+		// Or Set to 0 if we want to keep the slot?
+		// User said "Only the quantity decreases".
+		// Deleting is cleaner for the DB.
+		l.app.Delete(res)
+
+		l.app.Logger().Info("[CRON] Sold Reserve Item", "company", company.GetString("name"), "item", item.GetString("name"), "qty", qty, "revenue", revenue)
+	}
+}

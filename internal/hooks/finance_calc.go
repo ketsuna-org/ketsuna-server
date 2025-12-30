@@ -22,6 +22,7 @@ type FinanceBreakdown struct {
 	Breakdown struct {
 		ProductionValue    float64            `json:"production_value"`
 		ReputationBonus    float64            `json:"reputation_bonus"`
+		ReserveValue       float64            `json:"reserve_value"`
 		TotalRevenue       float64            `json:"total_revenue"`
 		MachineMaintenance float64            `json:"machine_maintenance"`
 		Payroll            float64            `json:"payroll"`
@@ -168,8 +169,22 @@ func (l *EconomyLogic) CalculateCompanyFinance(companyId string) (*FinanceBreakd
 	// --- CALCUL DES REVENUS PASSIFS (Bonus Réputation) ---
 	monthlyReputationBonus := reputation // 1€ par point
 
+	// --- CALCUL VALEUR RESERVE (Liquidation 24h) ---
+	reserveRevenue := 0.0
+	reserves, _ := l.app.FindRecordsByFilter("reserve", fmt.Sprintf("company='%s'", companyId), "", 0, 0)
+	for _, res := range reserves {
+		itemId := res.GetString("item")
+		qty := res.GetInt("quantity")
+		if qty > 0 {
+			item, err := l.app.FindRecordById("items", itemId)
+			if err == nil {
+				reserveRevenue += float64(qty) * item.GetFloat("base_price")
+			}
+		}
+	}
+
 	// --- AGRÉGATION FINALE ---
-	totalMonthlyRevenue := monthlyProductionValue + monthlyReputationBonus
+	totalMonthlyRevenue := monthlyProductionValue + monthlyReputationBonus + reserveRevenue
 	totalMonthlyCosts := monthlyMachineCost + monthlyPayrollCost
 	monthlyNetProfit := totalMonthlyRevenue - totalMonthlyCosts
 
@@ -193,6 +208,7 @@ func (l *EconomyLogic) CalculateCompanyFinance(companyId string) (*FinanceBreakd
 
 	resp.Breakdown.ProductionValue = monthlyProductionValue
 	resp.Breakdown.ReputationBonus = monthlyReputationBonus
+	resp.Breakdown.ReserveValue = reserveRevenue
 	resp.Breakdown.TotalRevenue = totalMonthlyRevenue
 	resp.Breakdown.MachineMaintenance = monthlyMachineCost
 	resp.Breakdown.Payroll = monthlyPayrollCost
@@ -206,7 +222,7 @@ func (l *EconomyLogic) CalculateCompanyFinance(companyId string) (*FinanceBreakd
 	resp.Breakdown.DailyPayroll = monthlyPayrollCost
 
 	resp.DailyView.RevenueBase = monthlyReputationBonus
-	resp.DailyView.RevenueEmployees = monthlyProductionValue
+	resp.DailyView.RevenueEmployees = monthlyProductionValue + reserveRevenue
 	resp.DailyView.RevenueReputation = 0
 	resp.DailyView.CostMaintenance = monthlyMachineCost
 	resp.DailyView.CostPayroll = monthlyPayrollCost
