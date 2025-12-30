@@ -23,7 +23,7 @@ func (l *InventoryLogic) UpdateInventory(companyId, itemId string, quantity int)
 	// v0.35: app.FindFirstRecordByFilter
 	filter := fmt.Sprintf("company = '%s' && item = '%s'", companyId, itemId)
 	record, err := l.app.FindFirstRecordByFilter("inventory", filter)
-	
+
 	if err != nil {
 		// Not found usually returns error in PB.
 	}
@@ -71,6 +71,32 @@ func (l *InventoryLogic) HasEnoughItems(companyId, itemId string, requiredQty in
 		return false
 	}
 	return record.GetInt("quantity") >= requiredQty
+}
+
+// HasRequiredTechnology checks if a company has the required tech for a recipe
+// Returns (hasIt bool, techName string) - techName is empty if no tech required
+func (l *InventoryLogic) HasRequiredTechnology(companyId, recipeId string) (bool, string) {
+	recipe, err := l.app.FindRecordById("recipes", recipeId)
+	if err != nil {
+		return false, ""
+	}
+
+	requiredTechId := recipe.GetString("required_tech")
+	if requiredTechId == "" {
+		return true, "" // No tech required
+	}
+
+	filter := fmt.Sprintf("company = '%s' && technology = '%s'", companyId, requiredTechId)
+	_, err = l.app.FindFirstRecordByFilter("company_techs", filter)
+	if err != nil {
+		tech, _ := l.app.FindRecordById("technologies", requiredTechId)
+		techName := "Unknown Tech"
+		if tech != nil {
+			techName = tech.GetString("name")
+		}
+		return false, techName
+	}
+	return true, ""
 }
 
 // ConsumeInputs verifies requirements and subtracts ingredients for a recipe
@@ -130,7 +156,7 @@ func (l *InventoryLogic) ConsumeInputs(companyId, recipeId string, quantity int)
 	xpGained := float64(len(inputIds) * 10 * quantity)
 	currentRep := company.GetFloat("reputation")
 	company.Set("reputation", currentRep+(float64(quantity)*0.05))
-	
+
 	if err := l.app.Save(company); err != nil {
 		return 0, err
 	}
@@ -186,7 +212,7 @@ func (l *InventoryLogic) CompleteProduction(companyId, recipeId string, quantity
 		return err
 	}
 	outputItemId := recipe.GetString("output_item")
-	
+
 	if err := l.UpdateInventory(companyId, outputItemId, quantity); err != nil {
 		return err
 	}
@@ -198,7 +224,7 @@ func (l *InventoryLogic) CompleteProduction(companyId, recipeId string, quantity
 		company.Set("reputation", currentRep+(float64(quantity)*0.05))
 		l.app.Save(company)
 	}
-	
+
 	return nil
 }
 
@@ -245,14 +271,14 @@ func (l *InventoryLogic) SellInventory(companyId, itemId string, quantity int) (
 
 	// Update Company Balance
 	currentBalance := company.GetFloat("balance")
-	
-	newBalance := math.Round((currentBalance + revenue) * 100) / 100
+
+	newBalance := math.Round((currentBalance+revenue)*100) / 100
 	company.Set("balance", newBalance)
 
 	// Tech points
 	currentTech := company.GetFloat("tech_points")
-	techGain := math.Round((revenue * 0.01) * 100) / 100
-	company.Set("tech_points", math.Round((currentTech + techGain) * 100) / 100)
+	techGain := math.Round((revenue*0.01)*100) / 100
+	company.Set("tech_points", math.Round((currentTech+techGain)*100)/100)
 
 	if err := l.app.Save(company); err != nil {
 		return nil, err

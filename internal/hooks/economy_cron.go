@@ -93,6 +93,15 @@ func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
 
 		if recipeId != "" {
 			// --- RECIPE PRODUCTION ---
+			// Check technology requirement first
+			hasTech, techName := l.inventory.HasRequiredTechnology(companyId, recipeId)
+			if !hasTech {
+				l.app.Logger().Info("[ECONOMY] Machine blocked: missing technology",
+					"machine", machineItem.GetString("name"),
+					"tech", techName)
+				continue
+			}
+
 			recipe, err := l.app.FindRecordById("recipes", recipeId)
 			if err != nil {
 				continue
