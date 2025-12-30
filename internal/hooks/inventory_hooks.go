@@ -34,38 +34,10 @@ func registerInventoryHooks(app *pocketbase.PocketBase) {
 			return apis.NewBadRequestError("Item introuvable", nil)
 		}
 
-		// If inventory exists, update quantity and deduct money if CEO
+		// If inventory exists, return error
 		existing, _ := e.App.FindFirstRecordByFilter("inventory", fmt.Sprintf("company='%s' && item='%s'", companyId, itemId))
 		if existing != nil {
-			curr := existing.GetInt("quantity")
-			existing.Set("quantity", curr+qty)
-			if err := e.App.Save(existing); err != nil {
-				e.App.Logger().Error("Erreur mise à jour inventaire", "error", err)
-				return apis.NewBadRequestError("Erreur mise à jour inventaire", nil)
-			}
-
-			// Deduct money if CEO
-			if e.Auth != nil && e.Auth.Id == company.GetString("ceo") {
-				itemPrice := item.GetInt("base_price")
-				totalCost := itemPrice * qty
-				current := company.GetInt("balance")
-				if current < totalCost {
-					// Revert the update
-					existing.Set("quantity", curr)
-					e.App.Save(existing)
-					return apis.NewBadRequestError(fmt.Sprintf("Fonds insuffisants. Coût: %d€, Solde: %d€", totalCost, current), nil)
-				}
-				company.Set("balance", current-totalCost)
-				if err := e.App.Save(company); err != nil {
-					// Revert the update
-					existing.Set("quantity", curr)
-					e.App.Save(existing)
-					e.App.Logger().Error("[PURCHASE] erreur save company", "error", err)
-				}
-				e.App.Logger().Info("[PURCHASE] Company purchased item", "companyId", companyId, "itemId", itemId, "qty", qty, "totalCost", totalCost)
-			}
-
-			return apis.NewBadRequestError(fmt.Sprintf("Item déjà en inventaire. Quantité mise à jour: %d", curr+qty), nil)
+			return apis.NewBadRequestError("Item already in inventory, use update API to add quantity", nil)
 		}
 
 		// Deduct money for new item if CEO

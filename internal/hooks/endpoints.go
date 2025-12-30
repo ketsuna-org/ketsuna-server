@@ -114,6 +114,97 @@ func RegisterEndpoints(app *pocketbase.PocketBase, inv *InventoryLogic, eco *Eco
 
 		})
 
+		// INVENTORY PURCHASE
+		e.Router.POST("/api/inventory/purchase", func(c *core.RequestEvent) error {
+			authRecord := c.Auth
+			if authRecord == nil {
+				return apis.NewUnauthorizedError("Vous devez être connecté.", nil)
+			}
+
+			data := struct {
+				CompanyId string `json:"companyId" form:"companyId"`
+				ItemId    string `json:"itemId" form:"itemId"`
+				Quantity  int    `json:"quantity" form:"quantity"`
+			}{}
+			if err := c.BindBody(&data); err != nil {
+				return apis.NewBadRequestError("Corps JSON invalide", err)
+			}
+
+			if data.CompanyId == "" || data.ItemId == "" || data.Quantity <= 0 {
+				return apis.NewBadRequestError("companyId, itemId requis, quantity > 0", nil)
+			}
+
+			companyId := data.CompanyId
+			company, err := app.FindRecordById("companies", companyId)
+			if err != nil {
+				return apis.NewBadRequestError("Entreprise introuvable", nil)
+			}
+			if company.GetString("ceo") != authRecord.Id && !authRecord.IsSuperuser() {
+				return apis.NewForbiddenError("Seul le PDG peut acheter", nil)
+			}
+
+			item, err := app.FindRecordById("items", data.ItemId)
+			if err != nil {
+				return apis.NewBadRequestError("Item introuvable", nil)
+			}
+
+			itemPrice := item.GetInt("base_price")
+			totalCost := itemPrice * data.Quantity
+			current := company.GetInt("balance")
+			if current < totalCost {
+				return apis.NewBadRequestError(fmt.Sprintf("Fonds insuffisants. Coût: %d€, Solde: %d€", totalCost, current), nil)
+			}
+
+			// Check existing
+			existing, _ := app.FindFirstRecordByFilter("inventory", fmt.Sprintf("company='%s' && item='%s'", companyId, data.ItemId))
+			if existing != nil {
+				// Update
+				curr := existing.GetInt("quantity")
+				existing.Set("quantity", curr+data.Quantity)
+				if err := app.Save(existing); err != nil {
+					return apis.NewBadRequestError("Erreur mise à jour inventaire", err)
+				}
+			} else {
+				// Create
+				collection, err := app.FindCollectionByNameOrId("inventory")
+				if err != nil {
+					return apis.NewBadRequestError("Erreur collection", err)
+				}
+				newRecord := core.NewRecord(collection)
+				newRecord.Set("company", companyId)
+				newRecord.Set("item", data.ItemId)
+				newRecord.Set("quantity", data.Quantity)
+				if err := app.Save(newRecord); err != nil {
+					return apis.NewBadRequestError("Erreur création inventaire", err)
+				}
+				existing = newRecord
+			}
+
+			// Deduct
+			company.Set("balance", current-totalCost)
+			if err := app.Save(company); err != nil {
+				// Revert
+				if existing.GetInt("quantity") == data.Quantity {
+					// Was create, delete
+					app.Delete(existing)
+				} else {
+					// Was update, revert
+					existing.Set("quantity", existing.GetInt("quantity")-data.Quantity)
+					app.Save(existing)
+				}
+				return apis.NewBadRequestError("Erreur sauvegarde entreprise", err)
+			}
+
+			app.Logger().Info("[PURCHASE] Company purchased item", "companyId", companyId, "itemId", data.ItemId, "qty", data.Quantity, "totalCost", totalCost)
+
+			return c.JSON(200, map[string]interface{}{
+				"success": true,
+				"message": "Achat réussi",
+				"record":  existing,
+				"cost":    totalCost,
+			})
+		})
+
 		// COMPANY FINANCE (ported from JS)
 		e.Router.POST("/api/company/finance", func(c *core.RequestEvent) error {
 			authRecord := c.Auth
