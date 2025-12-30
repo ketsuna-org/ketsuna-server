@@ -279,6 +279,7 @@ func RegisterEndpoints(app *pocketbase.PocketBase, inv *InventoryLogic, eco *Eco
 			}
 
 			company.Set("balance", balance-cost)
+			company.Set("reputation", reputation-repReq)
 			company.Set("level", currentLevel+1)
 			if err := app.Save(company); err != nil {
 				return apis.NewBadRequestError("Erreur lors de la sauvegarde", err)
@@ -293,7 +294,7 @@ func RegisterEndpoints(app *pocketbase.PocketBase, inv *InventoryLogic, eco *Eco
 			})
 		})
 
-		// EMPLOYEE HIRE Custom Endpoint
+		// EMPLOYEE HIRE Custom Endpoint (with bulk support)
 		e.Router.POST("/api/employees/hire", func(c *core.RequestEvent) error {
 			authRecord := c.Auth
 			if authRecord == nil {
@@ -302,6 +303,7 @@ func RegisterEndpoints(app *pocketbase.PocketBase, inv *InventoryLogic, eco *Eco
 
 			data := struct {
 				CompanyId string `json:"companyId" form:"companyId"`
+				Quantity  int    `json:"quantity" form:"quantity"`
 			}{}
 			if err := c.BindBody(&data); err != nil {
 				return apis.NewBadRequestError("Corps JSON invalide", err)
@@ -310,6 +312,14 @@ func RegisterEndpoints(app *pocketbase.PocketBase, inv *InventoryLogic, eco *Eco
 			companyId := data.CompanyId
 			if companyId == "" {
 				return apis.NewBadRequestError("companyId requis", nil)
+			}
+
+			quantity := data.Quantity
+			if quantity <= 0 {
+				quantity = 1
+			}
+			if quantity > 50 {
+				quantity = 50 // Max 50 per batch
 			}
 
 			// Validate CEO ownership
@@ -322,17 +332,53 @@ func RegisterEndpoints(app *pocketbase.PocketBase, inv *InventoryLogic, eco *Eco
 				return apis.NewForbiddenError("Vous n'êtes pas le PDG de cette entreprise", nil)
 			}
 
-			// Hire
-			hired, err := emp.HireEmployee(companyId)
-			if err != nil {
-				return apis.NewBadRequestError(err.Error(), nil)
+			// Hire multiple employees
+			hiredRecords := []*core.Record{}
+			totalCost := 0
+			errors := []string{}
+
+			for i := 0; i < quantity; i++ {
+				hired, err := emp.HireEmployee(companyId)
+				if err != nil {
+					errors = append(errors, err.Error())
+					break // Stop on first error (usually balance insufficient)
+				}
+				hiredRecords = append(hiredRecords, hired.Record)
+				totalCost += hired.Cost
+			}
+
+			if len(hiredRecords) == 0 {
+				return apis.NewBadRequestError(errors[0], nil)
 			}
 
 			return c.JSON(200, map[string]interface{}{
-				"success": true,
-				"message": "Employé recruté avec succès",
-				"record":  hired.Record,
-				"cost":    hired.Cost,
+				"success":    true,
+				"message":    fmt.Sprintf("%d employé(s) recruté(s) avec succès", len(hiredRecords)),
+				"records":    hiredRecords,
+				"totalCost":  totalCost,
+				"hiredCount": len(hiredRecords),
+				"errors":     errors,
+			})
+		})
+
+		// EMPLOYEE PREVIEW COST Endpoint
+		e.Router.GET("/api/employees/preview-cost", func(c *core.RequestEvent) error {
+			// Return average hiring costs based on employee_logic.go constants
+			// Common (40%): salary ~26, fee = 26*5 = 130, reserve = 26*30 = 780
+			// Rare (30%): salary ~65, fee = 325, reserve = 1950
+			// Epic (9%): salary ~130, fee = 650, reserve = 3900
+			// Legendary (1%): salary ~260, fee = 1300, reserve = 7800
+
+			// Weighted average: 0.4*130 + 0.3*325 + 0.09*650 + 0.01*1300 = 221
+			avgHiringFee := 221
+			avgReserve := 1326
+
+			return c.JSON(200, map[string]interface{}{
+				"averageHiringFee":     avgHiringFee,
+				"averageReserveNeeded": avgReserve,
+				"averageTotalRequired": avgHiringFee + avgReserve,
+				"maxBulkHire":          50,
+				"description":          "Coût moyen estimé pour embaucher un employé",
 			})
 		})
 
