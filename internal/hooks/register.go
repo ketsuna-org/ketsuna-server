@@ -34,9 +34,9 @@ func RegisterHooks(app *pocketbase.PocketBase) {
 
 func startEconomyTicker(app *pocketbase.PocketBase, eco *EconomyLogic) {
 	// 1. Fast Ticker (Sub-minute tasks) - Keep using Ticker
-	// User set this to 20s
+	// User set this to 1s
 	go func() {
-		t := time.NewTicker(20 * time.Second)
+		t := time.NewTicker(1 * time.Second)
 		defer t.Stop()
 		for range t.C {
 			companies, err := app.FindRecordsByFilter("companies", "", "", 0, 0)

@@ -108,8 +108,8 @@ func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
 			}
 			productionTime := recipe.GetInt("production_time")
 
-			if productionTime > 60 {
-				// Long production
+			if productionTime > 0 {
+				// Timed production (Any duration > 0)
 				startedAt := assignment.GetDateTime("production_started_at")
 
 				if startedAt.IsZero() {
@@ -134,13 +134,41 @@ func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
 					}
 				}
 			} else {
-				// Short Production (Immediate)
+				// Short Production (Immediate) - Only if production_time is 0
 				_, _ = l.inventory.ProduceItem(companyId, recipeId, finalQty)
 			}
 
 		} else if productId != "" {
 			// --- PASSIVE PRODUCTION ---
-			_ = l.inventory.UpdateInventory(companyId, productId, finalQty)
+			productionTime := machineItem.GetInt("production_time")
+
+			if productionTime > 0 {
+				// Timed Passive Production (Even for short times, as requested)
+				startedAt := assignment.GetDateTime("production_started_at")
+
+				if startedAt.IsZero() {
+					// Start Production
+					assignment.Set("production_started_at", types.NowDateTime())
+					l.app.Save(assignment)
+				} else {
+					// Check if finished
+					elapsed := time.Since(startedAt.Time()).Seconds()
+					if elapsed >= float64(productionTime) {
+						// Complete Production
+						err := l.inventory.UpdateInventory(companyId, productId, finalQty)
+						if err == nil {
+							// Reset
+							assignment.Set("production_started_at", types.DateTime{}) // Zero
+							l.app.Save(assignment)
+						} else {
+							l.app.Logger().Error("[ECONOMY] Passive Production Error", "machine", machineItem.GetString("name"), "error", err)
+						}
+					}
+				}
+			} else {
+				// Immediate Production (Every tick) - Only if production_time is 0 or missing
+				_ = l.inventory.UpdateInventory(companyId, productId, finalQty)
+			}
 		}
 	}
 
