@@ -46,6 +46,6 @@ func registerEmployeeHooks(app *pocketbase.PocketBase) {
 			}
 		}
 
-		return nil
+		return e.Next()
 	})
 }

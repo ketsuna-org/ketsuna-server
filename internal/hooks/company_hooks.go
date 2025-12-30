@@ -31,7 +31,7 @@ func registerCompanyHooks(app *pocketbase.PocketBase) {
 
 		r.Set("payroll_daily_cost", 0)
 
-		return nil
+		return e.Next()
 	})
 
 	// Prevent deletion when related records exist
@@ -56,7 +56,7 @@ func registerCompanyHooks(app *pocketbase.PocketBase) {
 			return apis.NewBadRequestError("Impossible de supprimer une entreprise liée à des actions", nil)
 		}
 
-		return nil
+		return e.Next()
 	})
 
 	// After create: attach to owner's owned_companies

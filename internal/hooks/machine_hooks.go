@@ -43,7 +43,7 @@ func registerMachineHooks(app *pocketbase.PocketBase, inv *InventoryLogic) {
 		}
 
 		app.Logger().Info("[MACHINES] Machine assigned", "machineId", machineItemId, "companyId", companyId)
-		return nil
+		return e.Next()
 	})
 
 	app.OnRecordUpdateRequest("machines").BindFunc(func(e *core.RecordRequestEvent) error {
@@ -52,20 +52,27 @@ func registerMachineHooks(app *pocketbase.PocketBase, inv *InventoryLogic) {
 
 		if len(employeeIds) > 0 {
 			// Check if any employee is already assigned to ANOTHER machine
+			e.App.Logger().Info("[MACHINES] Validating update", "machineId", record.Id, "newEmployeeList", employeeIds)
 			for _, empId := range employeeIds {
 				// We search for ANY machine containing this employee
 				found, err := app.FindRecordsByFilter("machines", fmt.Sprintf("employees ~ '%s'", empId), "", 10, 0)
 				if err == nil {
+					e.App.Logger().Info("[MACHINES] Checked employee", "empId", empId, "foundInMachines", len(found))
 					for _, m := range found {
+						e.App.Logger().Info("[MACHINES] comparing", "foundId", m.Id, "currentId", record.Id)
 						if m.Id != record.Id {
 							app.Logger().Error("[MACHINES] Validation failed: Employee already busy", "empId", empId, "otherMachine", m.Id)
 							return apis.NewBadRequestError("Un ou plusieurs employés sont déjà assignés à une autre machine.", nil)
 						}
 					}
+				} else {
+					e.App.Logger().Error("[MACHINES] Error checking filter", "error", err)
 				}
 			}
+		} else {
+			e.App.Logger().Info("[MACHINES] Clearing all employees", "machineId", record.Id)
 		}
-		return nil
+		return e.Next()
 	})
 
 	app.OnRecordDeleteRequest("machines").BindFunc(func(e *core.RecordRequestEvent) error {
@@ -80,6 +87,6 @@ func registerMachineHooks(app *pocketbase.PocketBase, inv *InventoryLogic) {
 				app.Logger().Info("[MACHINES] Assignation supprimée. Machine renvoyée au stock", "machineId", machineItemId)
 			}
 		}
-		return nil
+		return e.Next()
 	})
 }

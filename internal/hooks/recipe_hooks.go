@@ -13,7 +13,7 @@ func registerRecipeHooks(app *pocketbase.PocketBase) {
 		if err != nil || !info.HasSuperuserAuth() {
 			return apis.NewBadRequestError("Seuls les administrateurs peuvent créer des recettes", nil)
 		}
-		return nil
+		return e.Next()
 	})
 
 	app.OnRecordUpdateRequest("recipes").BindFunc(func(e *core.RecordRequestEvent) error {
@@ -21,7 +21,7 @@ func registerRecipeHooks(app *pocketbase.PocketBase) {
 		if err != nil || !info.HasSuperuserAuth() {
 			return apis.NewBadRequestError("Seuls les administrateurs peuvent modifier des recettes", nil)
 		}
-		return nil
+		return e.Next()
 	})
 
 	app.OnRecordDeleteRequest("recipes").BindFunc(func(e *core.RecordRequestEvent) error {
@@ -29,6 +29,6 @@ func registerRecipeHooks(app *pocketbase.PocketBase) {
 		if err != nil || !info.HasSuperuserAuth() {
 			return apis.NewBadRequestError("Seuls les administrateurs peuvent supprimer des recettes", nil)
 		}
-		return nil
+		return e.Next()
 	})
 }

@@ -72,7 +72,7 @@ func registerStockHooks(app *pocketbase.PocketBase) {
 		}
 		r.Set("price_history_json", history)
 
-		return nil
+		return e.Next()
 	})
 
 	app.OnRecordAfterCreateSuccess("stocks").BindFunc(func(e *core.RecordEvent) error {
@@ -148,7 +148,7 @@ func registerStockHooks(app *pocketbase.PocketBase) {
 			return apis.NewBadRequestError("Les actions publiques ne peuvent pas dépasser le total", nil)
 		}
 
-		return nil
+		return e.Next()
 	})
 
 	app.OnRecordAfterUpdateSuccess("stocks").BindFunc(func(e *core.RecordEvent) error {
@@ -184,7 +184,7 @@ func registerStockHooks(app *pocketbase.PocketBase) {
 		if err == nil && len(counts) > 0 {
 			return apis.NewBadRequestError("Impossible de supprimer le stock : il y a encore des actionnaires.", nil)
 		}
-		return nil
+		return e.Next()
 	})
 }
 
@@ -235,7 +235,7 @@ func registerShareholderHooks(app *pocketbase.PocketBase) {
 			return apis.NewBadRequestError(fmt.Sprintf("Actionnaire déjà existant. Quantité mise à jour: %d", curr+qty), nil)
 		}
 
-		return nil
+		return e.Next()
 	})
 
 	app.OnRecordUpdateRequest("shareholders").BindFunc(func(e *core.RecordRequestEvent) error {
@@ -282,7 +282,7 @@ func registerShareholderHooks(app *pocketbase.PocketBase) {
 				return apis.NewBadRequestError(fmt.Sprintf("Pas assez d'actions disponibles. Disponible: %d", avail), nil)
 			}
 		}
-		return nil
+		return e.Next()
 	})
 
 	app.OnRecordAfterUpdateSuccess("shareholders").BindFunc(func(e *core.RecordEvent) error {

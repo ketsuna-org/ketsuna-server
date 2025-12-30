@@ -55,7 +55,7 @@ func registerInventoryHooks(app *pocketbase.PocketBase) {
 			e.App.Logger().Info("[PURCHASE] Company purchased item", "companyId", companyId, "itemId", itemId, "qty", qty, "totalCost", totalCost)
 		}
 
-		return nil
+		return e.Next()
 	})
 
 	app.OnRecordUpdateRequest("inventory").BindFunc(func(e *core.RecordRequestEvent) error {
@@ -96,7 +96,7 @@ func registerInventoryHooks(app *pocketbase.PocketBase) {
 			return apis.NewBadRequestError("La quantité ne peut pas être négative", nil)
 		}
 
-		return nil
+		return e.Next()
 	})
 
 	app.OnRecordAfterUpdateSuccess("inventory").BindFunc(func(e *core.RecordEvent) error {

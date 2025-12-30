@@ -53,7 +53,7 @@ func registerCompanyTechHooks(app *pocketbase.PocketBase) {
 			return err
 		}
 
-		return nil
+		return e.Next()
 	})
 
 	app.OnRecordUpdateRequest("company_techs").BindFunc(func(e *core.RecordRequestEvent) error {
@@ -82,6 +82,6 @@ func registerCompanyTechHooks(app *pocketbase.PocketBase) {
 		app.Save(company)
 
 		app.Logger().Info("Technologie supprimée. Remboursement effectué.", "technology", tech.GetString("name"), "refund", refund)
-		return nil
+		return e.Next()
 	})
 }
