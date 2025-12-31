@@ -270,17 +270,12 @@ func RegisterEndpoints(app *pocketbase.PocketBase, inv *InventoryLogic, eco *Eco
 			repReq := currentLevel * 10
 
 			balance := company.GetInt("balance")
-			reputation := company.GetInt("reputation")
 
 			if balance < cost {
 				return apis.NewBadRequestError(fmt.Sprintf("Fonds insuffisants. Coût: %d€, Solde: %d€", cost, balance), nil)
 			}
-			if reputation < repReq {
-				return apis.NewBadRequestError(fmt.Sprintf("Réputation insuffisante. Requis: %d, Actuelle: %d", repReq, reputation), nil)
-			}
 
 			company.Set("balance", balance-cost)
-			company.Set("reputation", reputation-repReq)
 			company.Set("level", currentLevel+1)
 			if err := app.Save(company); err != nil {
 				return apis.NewBadRequestError("Erreur lors de la sauvegarde", err)

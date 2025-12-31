@@ -27,17 +27,12 @@ func registerCompanyTechHooks(app *pocketbase.PocketBase) {
 			return apis.NewBadRequestError("Technology introuvable", nil)
 		}
 
-		techCost := tech.GetInt("cost")
 		reqLevel := tech.GetInt("required_level")
-		currPoints := company.GetInt("tech_points")
+
 		currLevel := company.GetInt("level")
 
 		if currLevel < reqLevel {
 			return apis.NewBadRequestError(fmt.Sprintf("Niveau insuffisant. Niveau %d requis (vous êtes niveau %d)", reqLevel, currLevel), nil)
-		}
-
-		if currPoints < techCost {
-			return apis.NewBadRequestError(fmt.Sprintf("Tech points insuffisants. %d requis (vous avez %d)", techCost, currPoints), nil)
 		}
 
 		// Check duplicate
@@ -47,8 +42,6 @@ func registerCompanyTechHooks(app *pocketbase.PocketBase) {
 			return apis.NewBadRequestError("Cette technologie est déjà acquise", nil)
 		}
 
-		// Deduct points
-		company.Set("tech_points", currPoints-techCost)
 		if err := app.Save(company); err != nil {
 			return err
 		}
@@ -62,26 +55,15 @@ func registerCompanyTechHooks(app *pocketbase.PocketBase) {
 
 	app.OnRecordDeleteRequest("company_techs").BindFunc(func(e *core.RecordRequestEvent) error {
 		r := e.Record
-		companyId := r.GetString("company")
+
 		techId := r.GetString("technology")
 
-		company, err := app.FindRecordById("companies", companyId)
-		if err != nil {
-			return nil
-		}
 		tech, err := app.FindRecordById("technologies", techId)
 		if err != nil {
 			return nil
 		}
 
-		cost := tech.GetInt("cost")
-		curr := company.GetInt("tech_points")
-		refund := int(float64(cost) * 0.5)
-
-		company.Set("tech_points", curr+refund)
-		app.Save(company)
-
-		app.Logger().Info("Technologie supprimée. Remboursement effectué.", "technology", tech.GetString("name"), "refund", refund)
+		app.Logger().Info("Technologie supprimée.", "technology", tech.GetString("name"))
 		return e.Next()
 	})
 }

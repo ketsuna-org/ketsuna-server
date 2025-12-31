@@ -17,17 +17,12 @@ func registerCompanyHooks(app *pocketbase.PocketBase) {
 		}
 
 		if r.GetString("is_npc") != "true" {
-			r.Set("balance", 10000)
+			r.Set("balance", 0)
 		} else if r.GetString("balance") == "" {
-			r.Set("balance", 10000)
+			r.Set("balance", 0)
 		}
 
 		r.Set("level", 1)
-		r.Set("tech_points", 0)
-
-		if r.GetString("reputation") == "" {
-			r.Set("reputation", 50)
-		}
 
 		r.Set("payroll_daily_cost", 0)
 

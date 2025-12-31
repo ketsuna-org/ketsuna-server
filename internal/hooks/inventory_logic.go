@@ -152,10 +152,8 @@ func (l *InventoryLogic) ConsumeInputs(companyId, recipeId string, quantity int)
 		}
 	}
 
-	// 4. Reputation & XP
+	// 4.  XP
 	xpGained := float64(len(inputIds) * 10 * quantity)
-	currentRep := company.GetFloat("reputation")
-	company.Set("reputation", currentRep+(float64(quantity)*0.05))
 
 	if err := l.app.Save(company); err != nil {
 		return 0, err
@@ -217,14 +215,6 @@ func (l *InventoryLogic) CompleteProduction(companyId, recipeId string, quantity
 		return err
 	}
 
-	// Reputation bonus
-	company, err := l.app.FindRecordById("companies", companyId)
-	if err == nil {
-		currentRep := company.GetFloat("reputation")
-		company.Set("reputation", currentRep+(float64(quantity)*0.05))
-		l.app.Save(company)
-	}
-
 	return nil
 }
 
@@ -276,10 +266,6 @@ func (l *InventoryLogic) SellInventory(companyId, itemId string, quantity int) (
 	company.Set("balance", newBalance)
 
 	// Tech points
-	currentTech := company.GetFloat("tech_points")
-	techGain := math.Round((revenue*0.01)*100) / 100
-	company.Set("tech_points", math.Round((currentTech+techGain)*100)/100)
-
 	if err := l.app.Save(company); err != nil {
 		return nil, err
 	}

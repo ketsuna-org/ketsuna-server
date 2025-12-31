@@ -21,7 +21,6 @@ type FinanceBreakdown struct {
 	CompanyId string `json:"companyId"`
 	Breakdown struct {
 		ProductionValue    float64            `json:"production_value"`
-		ReputationBonus    float64            `json:"reputation_bonus"`
 		ReserveValue       float64            `json:"reserve_value"`
 		TotalRevenue       float64            `json:"total_revenue"`
 		MachineMaintenance float64            `json:"machine_maintenance"`
@@ -39,7 +38,6 @@ type FinanceBreakdown struct {
 	DailyView struct {
 		RevenueBase       float64 `json:"revenue_base"`
 		RevenueEmployees  float64 `json:"revenue_employees"`
-		RevenueReputation float64 `json:"revenue_reputation"`
 		CostMaintenance   float64 `json:"cost_maintenance"`
 		CostPayroll       float64 `json:"cost_payroll"`
 		TotalRevenue      float64 `json:"total_revenue"`
@@ -62,7 +60,6 @@ func (l *EconomyLogic) CalculateCompanyFinance(companyId string) (*FinanceBreakd
 	employees, _ := l.app.FindRecordsByFilter("employees", fmt.Sprintf("employer = '%s'", companyId), "", 0, 0)
 	assignedMachines, _ := l.app.FindRecordsByFilter("machines", fmt.Sprintf("company = '%s'", companyId), "", 0, 0)
 
-	reputation := company.GetFloat("reputation")
 
 	// --- CALCUL DES COÛTS FIXES (par 24h) ---
 	// A. Coût des machines (7€ par machine par 24h)
@@ -166,9 +163,6 @@ func (l *EconomyLogic) CalculateCompanyFinance(companyId string) (*FinanceBreakd
 		}
 	}
 
-	// --- CALCUL DES REVENUS PASSIFS (Bonus Réputation) ---
-	monthlyReputationBonus := reputation // 1€ par point
-
 	// --- CALCUL VALEUR RESERVE (Liquidation 24h) ---
 	reserveRevenue := 0.0
 	reserves, _ := l.app.FindRecordsByFilter("reserve", fmt.Sprintf("company='%s'", companyId), "", 0, 0)
@@ -184,7 +178,7 @@ func (l *EconomyLogic) CalculateCompanyFinance(companyId string) (*FinanceBreakd
 	}
 
 	// --- AGRÉGATION FINALE ---
-	totalMonthlyRevenue := monthlyProductionValue + monthlyReputationBonus + reserveRevenue
+	totalMonthlyRevenue := monthlyProductionValue + reserveRevenue
 	totalMonthlyCosts := monthlyMachineCost + monthlyPayrollCost
 	monthlyNetProfit := totalMonthlyRevenue - totalMonthlyCosts
 
@@ -207,7 +201,6 @@ func (l *EconomyLogic) CalculateCompanyFinance(companyId string) (*FinanceBreakd
 	}
 
 	resp.Breakdown.ProductionValue = monthlyProductionValue
-	resp.Breakdown.ReputationBonus = monthlyReputationBonus
 	resp.Breakdown.ReserveValue = reserveRevenue
 	resp.Breakdown.TotalRevenue = totalMonthlyRevenue
 	resp.Breakdown.MachineMaintenance = monthlyMachineCost
@@ -221,9 +214,7 @@ func (l *EconomyLogic) CalculateCompanyFinance(companyId string) (*FinanceBreakd
 	resp.Breakdown.ProductionDetails = productionDetails
 	resp.Breakdown.DailyPayroll = monthlyPayrollCost
 
-	resp.DailyView.RevenueBase = monthlyReputationBonus
 	resp.DailyView.RevenueEmployees = monthlyProductionValue + reserveRevenue
-	resp.DailyView.RevenueReputation = 0
 	resp.DailyView.CostMaintenance = monthlyMachineCost
 	resp.DailyView.CostPayroll = monthlyPayrollCost
 	resp.DailyView.TotalRevenue = totalMonthlyRevenue
