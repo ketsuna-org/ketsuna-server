@@ -48,4 +48,26 @@ func registerEmployeeHooks(app *pocketbase.PocketBase) {
 
 		return e.Next()
 	})
+	// Fire (Delete): Decrement company employee_count
+	app.OnRecordDeleteRequest("employees").BindFunc(func(e *core.RecordRequestEvent) error {
+		// Run the delete first
+		if err := e.Next(); err != nil {
+			return err
+		}
+
+		employerId := e.Record.GetString("employer")
+		if employerId != "" {
+			company, err := app.FindRecordById("companies", employerId)
+			if err == nil {
+				count := company.GetInt("employee_count")
+				if count > 0 {
+					company.Set("employee_count", count-1)
+					// We use SaveNoValidate to avoid triggering other hooks validation if possible/needed,
+					// or just standard Save.
+					app.Save(company)
+				}
+			}
+		}
+		return nil
+	})
 }

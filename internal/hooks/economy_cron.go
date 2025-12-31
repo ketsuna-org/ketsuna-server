@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"time"
 
+	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/tools/types"
 )
 
@@ -178,20 +179,73 @@ func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
 func (l *EconomyLogic) UpdateMarketPrices() {
 	items, _ := l.app.FindRecordsByFilter("items", "", "", 0, 0)
 	for _, item := range items {
-		basePrice := item.GetFloat("base_price")
-		volatility := item.GetFloat("volatility")
-		if volatility == 0 {
-			volatility = 0.1
+		// 1. Calculate Circulating Supply
+		// Supply = Sum(Inventory) + Sum(Reserve)
+		var invCount float64
+		var resCount float64
+		_ = l.app.DB().Select("SUM(quantity)").From("inventory").Where(dbx.HashExp{"item": item.Id}).Row(&invCount)
+		_ = l.app.DB().Select("SUM(quantity)").From("reserve").Where(dbx.HashExp{"item": item.Id}).Row(&resCount)
+
+		supply := int(invCount + resCount)
+		item.Set("circulating_supply", supply)
+
+		// 2. Simulate Market Demand (Random Walk)
+		// Assume an initial/average demand based on rarity or base mechanics, but here we randomize around current or default
+		currentDemand := item.GetInt("market_demand")
+		if currentDemand <= 0 {
+			// Initialize demand roughly around supply or a base value if supply is 0
+			currentDemand = 1000
+			if supply > 0 {
+				currentDemand = supply
+			}
 		}
 
-		variation := (rand.Float64() - 0.5) * 2 * volatility
-		newPrice := basePrice * (1 + variation)
+		// Change demand slightly (-10% to +10%)
+		demandChange := (rand.Float64() - 0.5) * 0.2
+		newDemand := int(float64(currentDemand) * (1 + demandChange))
+		if newDemand < 10 {
+			newDemand = 10
+		}
+		item.Set("market_demand", newDemand)
 
-		if newPrice < 0.01 {
-			newPrice = 0.01
+		// 3. Price Calculation (Supply/Demand Ratio)
+		// Ratio > 1 (High Demand, Low Supply) => Price Increases
+		// Ratio < 1 (Low Demand, High Supply) => Price Decreases
+		ratio := float64(newDemand) / float64(supply+1) // +1 to avoid div by zero
+
+		basePrice := item.GetFloat("base_price")
+		volatility := item.GetFloat("volatility")
+		if volatility <= 0 {
+			volatility = 0.05
+		}
+
+		// Move price towards the target implied by ratio, but capped by volatility
+		// If ratio is 2.0 (Double demand), price wants to go up.
+		// We use natural log or simple clamping to avoid explosion.
+		// Price change factor = ratio, but dampened.
+		// Example: If Ratio 1.2 (+20% demand surplus), price moves +2% * volatility (e.g.)
+
+		// Simplification:
+		// Target Price Change = (Ratio - 1)
+		// Actual Change = Target Price Change * Volatility
+
+		pctChange := (ratio - 1.0) * volatility
+
+		// Cap extreme changes per day
+		if pctChange > 0.2 {
+			pctChange = 0.2
+		}
+		if pctChange < -0.2 {
+			pctChange = -0.2
+		}
+
+		newPrice := basePrice * (1 + pctChange)
+		if newPrice < 0.1 {
+			newPrice = 0.1
 		}
 
 		item.Set("base_price", math.Round(newPrice*100)/100)
+
 		l.app.Save(item)
 	}
 }

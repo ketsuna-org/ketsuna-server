@@ -103,8 +103,9 @@ func (el *EmployeeLogic) HireEmployee(companyId string) (*HiredEmployee, error) 
 		return nil, fmt.Errorf("failed to create employee record: %v", err)
 	}
 
-	// 5. Deduct Balance
+	// 5. Deduct Balance & Increment Count
 	company.Set("balance", balance-hiringFee)
+	company.Set("employee_count", company.GetInt("employee_count")+1)
 	if err := el.app.Save(company); err != nil {
 		// Rollback employee creation if money deduction fails?
 		// ideally yes, but for now let's just error

@@ -42,6 +42,15 @@ func registerCompanyTechHooks(app *pocketbase.PocketBase) {
 			return apis.NewBadRequestError("Cette technologie est déjà acquise", nil)
 		}
 
+		cost := tech.GetFloat("cost")
+		balance := company.GetFloat("balance")
+
+		if balance < cost {
+			return apis.NewBadRequestError(fmt.Sprintf("Fonds insuffisants. Requis: %.2f, Actuel: %.2f", cost, balance), nil)
+		}
+
+		company.Set("balance", balance-cost)
+
 		if err := app.Save(company); err != nil {
 			return err
 		}
