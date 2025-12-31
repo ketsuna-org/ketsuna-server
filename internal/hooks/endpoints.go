@@ -3,11 +3,13 @@ package hooks
 import (
 	"fmt"
 	"math"
+	"time"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/tools/types"
 )
 
 func RegisterEndpoints(app *pocketbase.PocketBase, inv *InventoryLogic, eco *EconomyLogic, emp *EmployeeLogic) {
@@ -582,6 +584,198 @@ func RegisterEndpoints(app *pocketbase.PocketBase, inv *InventoryLogic, eco *Eco
 			return c.JSON(200, map[string]interface{}{
 				"used": usedSpace,
 				"max":  maxCapacity,
+			})
+		})
+
+		// HARVEST Endpoints (Manual Mining/Gathering)
+		// ------------------
+
+		// GET Harvest Status
+		e.Router.GET("/api/harvest/status", func(c *core.RequestEvent) error {
+			authRecord := c.Auth
+			if authRecord == nil {
+				return apis.NewUnauthorizedError("Non connecté", nil)
+			}
+
+			companyId := authRecord.GetString("active_company")
+			if companyId == "" {
+				return apis.NewBadRequestError("Aucune entreprise active", nil)
+			}
+
+			company, err := app.FindRecordById("companies", companyId)
+			if err != nil {
+				return apis.NewBadRequestError("Entreprise introuvable", nil)
+			}
+
+			// Get current harvest state
+			isProducing := company.GetDateTime("is_producing")
+			harvestingItemId := company.GetString("item_harvesting")
+
+			var currentHarvest map[string]interface{} = nil
+			var remainingSeconds float64 = 0
+
+			if !isProducing.IsZero() && harvestingItemId != "" {
+				item, err := app.FindRecordById("items", harvestingItemId)
+				if err == nil {
+					productionTime := item.GetInt("production_time")
+					elapsed := time.Since(isProducing.Time()).Seconds()
+					remainingSeconds = float64(productionTime) - elapsed
+					if remainingSeconds < 0 {
+						remainingSeconds = 0
+					}
+
+					currentHarvest = map[string]interface{}{
+						"itemId":           harvestingItemId,
+						"itemName":         item.GetString("name"),
+						"startedAt":        isProducing.Time(),
+						"productionTime":   productionTime,
+						"remainingSeconds": remainingSeconds,
+						"isComplete":       remainingSeconds <= 0,
+					}
+				}
+			}
+
+			// Get minable items
+			minableItems, _ := app.FindRecordsByFilter("items", "minable = true", "", 0, 0)
+			var minableList []map[string]interface{}
+			for _, item := range minableItems {
+				minableList = append(minableList, map[string]interface{}{
+					"id":             item.Id,
+					"name":           item.GetString("name"),
+					"type":           item.GetString("type"),
+					"productionTime": item.GetInt("production_time"),
+					"basePrice":      item.GetFloat("base_price"),
+				})
+			}
+
+			return c.JSON(200, map[string]interface{}{
+				"currentHarvest": currentHarvest,
+				"minableItems":   minableList,
+			})
+		})
+
+		// POST Start Harvest
+		e.Router.POST("/api/harvest/start", func(c *core.RequestEvent) error {
+			authRecord := c.Auth
+			if authRecord == nil {
+				return apis.NewUnauthorizedError("Non connecté", nil)
+			}
+
+			data := struct {
+				ItemId string `json:"itemId" form:"itemId"`
+			}{}
+			if err := c.BindBody(&data); err != nil {
+				return apis.NewBadRequestError("Corps invalide", err)
+			}
+
+			if data.ItemId == "" {
+				return apis.NewBadRequestError("itemId requis", nil)
+			}
+
+			companyId := authRecord.GetString("active_company")
+			if companyId == "" {
+				return apis.NewBadRequestError("Aucune entreprise active", nil)
+			}
+
+			company, err := app.FindRecordById("companies", companyId)
+			if err != nil {
+				return apis.NewBadRequestError("Entreprise introuvable", nil)
+			}
+
+			if company.GetString("ceo") != authRecord.Id && !authRecord.IsSuperuser() {
+				return apis.NewForbiddenError("Accès refusé", nil)
+			}
+
+			// Check if already harvesting
+			if !company.GetDateTime("is_producing").IsZero() {
+				return apis.NewBadRequestError("Une récolte est déjà en cours", nil)
+			}
+
+			// Verify item is minable
+			item, err := app.FindRecordById("items", data.ItemId)
+			if err != nil {
+				return apis.NewBadRequestError("Item introuvable", nil)
+			}
+
+			if !item.GetBool("minable") {
+				return apis.NewBadRequestError("Cet item ne peut pas être récolté manuellement", nil)
+			}
+
+			// Start harvest
+			company.Set("is_producing", types.NowDateTime())
+			company.Set("item_harvesting", data.ItemId)
+			if err := app.Save(company); err != nil {
+				return apis.NewBadRequestError("Erreur sauvegarde", err)
+			}
+
+			return c.JSON(200, map[string]interface{}{
+				"success":        true,
+				"message":        fmt.Sprintf("Récolte de %s démarrée", item.GetString("name")),
+				"productionTime": item.GetInt("production_time"),
+			})
+		})
+
+		// POST Collect Harvest
+		e.Router.POST("/api/harvest/collect", func(c *core.RequestEvent) error {
+			authRecord := c.Auth
+			if authRecord == nil {
+				return apis.NewUnauthorizedError("Non connecté", nil)
+			}
+
+			companyId := authRecord.GetString("active_company")
+			if companyId == "" {
+				return apis.NewBadRequestError("Aucune entreprise active", nil)
+			}
+
+			company, err := app.FindRecordById("companies", companyId)
+			if err != nil {
+				return apis.NewBadRequestError("Entreprise introuvable", nil)
+			}
+
+			if company.GetString("ceo") != authRecord.Id && !authRecord.IsSuperuser() {
+				return apis.NewForbiddenError("Accès refusé", nil)
+			}
+
+			// Check if harvesting
+			isProducing := company.GetDateTime("is_producing")
+			harvestingItemId := company.GetString("item_harvesting")
+
+			if isProducing.IsZero() || harvestingItemId == "" {
+				return apis.NewBadRequestError("Aucune récolte en cours", nil)
+			}
+
+			item, err := app.FindRecordById("items", harvestingItemId)
+			if err != nil {
+				return apis.NewBadRequestError("Item introuvable", nil)
+			}
+
+			// Check if complete
+			productionTime := item.GetInt("production_time")
+			elapsed := time.Since(isProducing.Time()).Seconds()
+
+			if elapsed < float64(productionTime) {
+				remaining := float64(productionTime) - elapsed
+				return apis.NewBadRequestError(fmt.Sprintf("Récolte pas encore terminée. %.0f secondes restantes", remaining), nil)
+			}
+
+			// Add to inventory
+			err = inv.UpdateInventory(companyId, harvestingItemId, 1)
+			if err != nil {
+				return apis.NewBadRequestError("Erreur ajout inventaire: "+err.Error(), nil)
+			}
+
+			// Reset harvest state
+			company.Set("is_producing", types.DateTime{})
+			company.Set("item_harvesting", "")
+			if err := app.Save(company); err != nil {
+				return apis.NewBadRequestError("Erreur sauvegarde", err)
+			}
+
+			return c.JSON(200, map[string]interface{}{
+				"success":  true,
+				"message":  fmt.Sprintf("1x %s collecté!", item.GetString("name")),
+				"itemName": item.GetString("name"),
+				"quantity": 1,
 			})
 		})
 
