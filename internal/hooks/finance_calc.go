@@ -36,13 +36,13 @@ type FinanceBreakdown struct {
 	} `json:"breakdown"`
 	Warning   *string `json:"warning"`
 	DailyView struct {
-		RevenueBase       float64 `json:"revenue_base"`
-		RevenueEmployees  float64 `json:"revenue_employees"`
-		CostMaintenance   float64 `json:"cost_maintenance"`
-		CostPayroll       float64 `json:"cost_payroll"`
-		TotalRevenue      float64 `json:"total_revenue"`
-		TotalCost         float64 `json:"total_cost"`
-		Profit            float64 `json:"profit"`
+		RevenueBase      float64 `json:"revenue_base"`
+		RevenueEmployees float64 `json:"revenue_employees"`
+		CostMaintenance  float64 `json:"cost_maintenance"`
+		CostPayroll      float64 `json:"cost_payroll"`
+		TotalRevenue     float64 `json:"total_revenue"`
+		TotalCost        float64 `json:"total_cost"`
+		Profit           float64 `json:"profit"`
 	} `json:"daily_view"`
 	HourlyNet  float64 `json:"hourly_net"`
 	DailyNet   float64 `json:"daily_net"`
@@ -51,7 +51,7 @@ type FinanceBreakdown struct {
 
 // CalculateCompanyFinance creates the financial report for a company
 func (l *EconomyLogic) CalculateCompanyFinance(companyId string) (*FinanceBreakdown, error) {
-	company, err := l.app.FindRecordById("companies", companyId)
+	_, err := l.app.FindRecordById("companies", companyId)
 	if err != nil {
 		return nil, fmt.Errorf("company introuvable")
 	}
@@ -59,7 +59,6 @@ func (l *EconomyLogic) CalculateCompanyFinance(companyId string) (*FinanceBreakd
 	// 2. Load related data
 	employees, _ := l.app.FindRecordsByFilter("employees", fmt.Sprintf("employer = '%s'", companyId), "", 0, 0)
 	assignedMachines, _ := l.app.FindRecordsByFilter("machines", fmt.Sprintf("company = '%s'", companyId), "", 0, 0)
-
 
 	// --- CALCUL DES COÛTS FIXES (par 24h) ---
 	// A. Coût des machines (7€ par machine par 24h)

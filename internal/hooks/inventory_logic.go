@@ -265,7 +265,8 @@ func (l *InventoryLogic) SellInventory(companyId, itemId string, quantity int) (
 	newBalance := math.Round((currentBalance+revenue)*100) / 100
 	company.Set("balance", newBalance)
 
-	// Tech points
+	// Tech points (not awarded on sale anymore)
+	techGain := 0.0
 	if err := l.app.Save(company); err != nil {
 		return nil, err
 	}
