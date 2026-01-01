@@ -33,6 +33,7 @@ func RegisterHooks(app *pocketbase.PocketBase) {
 	registerInventoryHooks(app)
 	registerRecipeHooks(app)
 	registerMachineHooks(app, invLogic)
+	RegisterExplorationCron(app)
 
 	// Run data correction on startup (fix past bugs)
 	app.OnServe().BindFunc(func(e *core.ServeEvent) error {

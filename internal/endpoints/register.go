@@ -18,6 +18,7 @@ func RegisterAll(app *pocketbase.PocketBase, inv *hooks.InventoryLogic, eco *hoo
 		registerReserveEndpoints(app, e)
 		registerHarvestEndpoints(app, e, inv)
 		registerMachineEndpoints(app, e)
+		registerExplorationEndpoints(app, e)
 
 		return e.Next()
 	})

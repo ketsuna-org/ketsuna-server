@@ -226,4 +226,78 @@ func registerMachineEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent) {
 			"totalEmployees":     len(employees),
 		})
 	})
+	// POST /api/machines/assign-deposit - Link a machine to a deposit
+	e.Router.POST("/api/machines/assign-deposit", func(c *core.RequestEvent) error {
+		authRecord := c.Auth
+		if authRecord == nil {
+			return apis.NewUnauthorizedError("Non connecté", nil)
+		}
+
+		type req struct {
+			MachineId string `json:"machineId"`
+			DepositId string `json:"depositId"`
+		}
+		var data req
+		if err := c.BindBody(&data); err != nil {
+			return apis.NewBadRequestError("Données invalides", err)
+		}
+
+		machine, err := app.FindRecordById("machines", data.MachineId)
+		if err != nil {
+			return apis.NewBadRequestError("Machine introuvable", err)
+		}
+		if machine.GetString("company") != authRecord.GetString("active_company") {
+			return apis.NewForbiddenError("Cette machine ne vous appartient pas", nil)
+		}
+
+		// If DepositId is empty, it means unassign
+		if data.DepositId == "" {
+			machine.Set("deposit", "")
+			if err := app.Save(machine); err != nil {
+				return apis.NewBadRequestError("Erreur lors de la désassignation", err)
+			}
+			return c.JSON(200, map[string]bool{"success": true})
+		}
+
+		deposit, err := app.FindRecordById("deposits", data.DepositId)
+		if err != nil {
+			return apis.NewBadRequestError("Gisement introuvable", err)
+		}
+		if deposit.GetString("company") != authRecord.GetString("active_company") {
+			return apis.NewForbiddenError("Ce gisement ne vous appartient pas", nil)
+		}
+
+		// Verify compatibility
+		machineItem, err := app.FindRecordById("items", machine.GetString("machine"))
+		if err != nil {
+			return apis.NewBadRequestError("Type de machine inconnu", err)
+		}
+
+		productItemId := machineItem.GetString("product")
+		depositResourceId := deposit.GetString("ressource") // Note spelling 'ressource' in schema
+
+		if productItemId != depositResourceId {
+			// Get names to be friendly
+			prodItem, _ := app.FindRecordById("items", productItemId)
+			depItem, _ := app.FindRecordById("items", depositResourceId)
+			prodName := "?"
+			depName := "?"
+			if prodItem != nil {
+				prodName = prodItem.GetString("name")
+			}
+			if depItem != nil {
+				depName = depItem.GetString("name")
+			}
+
+			return apis.NewBadRequestError(fmt.Sprintf("Incompatible : La machine extrait du %s mais le gisement est du %s", prodName, depName), nil)
+		}
+
+		// Assign
+		machine.Set("deposit", data.DepositId)
+		if err := app.Save(machine); err != nil {
+			return apis.NewBadRequestError("Erreur sauvegarde machine", err)
+		}
+
+		return c.JSON(200, map[string]bool{"success": true})
+	})
 }
