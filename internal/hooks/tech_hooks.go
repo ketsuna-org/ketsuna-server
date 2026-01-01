@@ -1,8 +1,6 @@
 package hooks
 
 import (
-	"fmt"
-
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
@@ -10,52 +8,7 @@ import (
 
 func registerCompanyTechHooks(app *pocketbase.PocketBase) {
 	app.OnRecordCreateRequest("company_techs").BindFunc(func(e *core.RecordRequestEvent) error {
-		r := e.Record
-		companyId := r.GetString("company")
-		techId := r.GetString("technology")
-
-		if companyId == "" || techId == "" {
-			return apis.NewBadRequestError("Company et Technology sont requis", nil)
-		}
-
-		company, err := app.FindRecordById("companies", companyId)
-		if err != nil {
-			return apis.NewBadRequestError("Company introuvable", nil)
-		}
-		tech, err := app.FindRecordById("technologies", techId)
-		if err != nil {
-			return apis.NewBadRequestError("Technology introuvable", nil)
-		}
-
-		reqLevel := tech.GetInt("required_level")
-
-		currLevel := company.GetInt("level")
-
-		if currLevel < reqLevel {
-			return apis.NewBadRequestError(fmt.Sprintf("Niveau insuffisant. Niveau %d requis (vous êtes niveau %d)", reqLevel, currLevel), nil)
-		}
-
-		// Check duplicate
-		filter := fmt.Sprintf("company = '%s' && technology = '%s'", companyId, techId)
-		existing, _ := app.FindFirstRecordByFilter("company_techs", filter)
-		if existing != nil {
-			return apis.NewBadRequestError("Cette technologie est déjà acquise", nil)
-		}
-
-		cost := tech.GetFloat("cost")
-		balance := company.GetFloat("balance")
-
-		if balance < cost {
-			return apis.NewBadRequestError(fmt.Sprintf("Fonds insuffisants. Requis: %.2f, Actuel: %.2f", cost, balance), nil)
-		}
-
-		company.Set("balance", balance-cost)
-
-		if err := app.Save(company); err != nil {
-			return err
-		}
-
-		return e.Next()
+		return apis.NewForbiddenError("Veuillez utiliser l'API officielle pour débloquer une technologie.", nil)
 	})
 
 	app.OnRecordUpdateRequest("company_techs").BindFunc(func(e *core.RecordRequestEvent) error {

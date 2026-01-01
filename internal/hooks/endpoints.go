@@ -52,19 +52,21 @@ func RegisterEndpoints(app *pocketbase.PocketBase, inv *InventoryLogic, eco *Eco
 			}
 
 			// Logic
-			result, err := inv.ProduceItem(companyId, data.RecipeId, data.Quantity)
-			if err != nil {
-				app.Logger().Error("[WORKSHOP] Erreur production", "error", err)
-				return apis.NewBadRequestError(err.Error(), nil)
-			}
+			return app.RunInTransaction(func(txApp core.App) error {
+				result, err := inv.ProduceItem(txApp, companyId, data.RecipeId, data.Quantity)
+				if err != nil {
+					app.Logger().Error("[WORKSHOP] Erreur production", "error", err)
+					return apis.NewBadRequestError(err.Error(), nil)
+				}
 
-			return c.JSON(200, map[string]interface{}{
-				"success":        true,
-				"message":        "Production réussie",
-				"produced":       result.Produced,
-				"itemName":       result.ItemName,
-				"xpGained":       result.XpGained,
-				"productionTime": result.ProductionTime,
+				return c.JSON(200, map[string]interface{}{
+					"success":        true,
+					"message":        "Production réussie",
+					"produced":       result.Produced,
+					"itemName":       result.ItemName,
+					"xpGained":       result.XpGained,
+					"productionTime": result.ProductionTime,
+				})
 			})
 
 		})
@@ -94,25 +96,28 @@ func RegisterEndpoints(app *pocketbase.PocketBase, inv *InventoryLogic, eco *Eco
 			if companyId == "" {
 				return apis.NewBadRequestError("Aucune entreprise active pour cet utilisateur", nil)
 			}
-			company, err := app.FindRecordById("companies", companyId)
-			if err != nil {
-				return apis.NewBadRequestError("Entreprise introuvable", nil)
-			}
-			if company.GetString("ceo") != authRecord.Id {
-				return apis.NewForbiddenError("Accès refusé", nil)
-			}
 
-			// Logic
-			result, err := inv.SellInventory(companyId, data.ItemId, data.Quantity)
-			if err != nil {
-				return apis.NewBadRequestError(err.Error(), nil)
-			}
+			return app.RunInTransaction(func(txApp core.App) error {
+				company, err := txApp.FindRecordById("companies", companyId)
+				if err != nil {
+					return apis.NewBadRequestError("Entreprise introuvable", nil)
+				}
+				if company.GetString("ceo") != authRecord.Id {
+					return apis.NewForbiddenError("Accès refusé", nil)
+				}
 
-			return c.JSON(200, map[string]interface{}{
-				"success":       true,
-				"revenue":       result.Revenue,
-				"unitSellPrice": result.UnitSellPrice,
-				"techGain":      result.TechGain,
+				// Logic
+				result, err := inv.SellInventory(txApp, companyId, data.ItemId, data.Quantity)
+				if err != nil {
+					return apis.NewBadRequestError(err.Error(), nil)
+				}
+
+				return c.JSON(200, map[string]interface{}{
+					"success":       true,
+					"revenue":       result.Revenue,
+					"unitSellPrice": result.UnitSellPrice,
+					"techGain":      result.TechGain,
+				})
 			})
 
 		})
@@ -138,92 +143,88 @@ func RegisterEndpoints(app *pocketbase.PocketBase, inv *InventoryLogic, eco *Eco
 			}
 
 			companyId := data.CompanyId
-			company, err := app.FindRecordById("companies", companyId)
-			if err != nil {
-				return apis.NewBadRequestError("Entreprise introuvable", nil)
-			}
-			if company.GetString("ceo") != authRecord.Id && !authRecord.IsSuperuser() {
-				return apis.NewForbiddenError("Seul le PDG peut acheter", nil)
-			}
-
-			item, err := app.FindRecordById("items", data.ItemId)
-			if err != nil {
-				return apis.NewBadRequestError("Item introuvable", nil)
-			}
-
-			// Block purchase of minable items
-			if item.GetBool("minable") {
-				return apis.NewBadRequestError("Les ressources brutes ne peuvent pas être achetées. Récoltez-les manuellement !", nil)
-			}
-
-			// Check circulating_supply availability
-			circulatingSupply := item.GetInt("circulating_supply")
-			if circulatingSupply <= 0 {
-				return apis.NewBadRequestError("Rupture de stock ! Nexa-Bank n'a plus cet item disponible aujourd'hui.", nil)
-			}
-			if circulatingSupply < data.Quantity {
-				return apis.NewBadRequestError(fmt.Sprintf("Stock insuffisant. Disponible: %d, Demandé: %d", circulatingSupply, data.Quantity), nil)
-			}
-
-			itemPrice := item.GetInt("base_price")
-			totalCost := itemPrice * data.Quantity
-			current := company.GetInt("balance")
-			if current < totalCost {
-				return apis.NewBadRequestError(fmt.Sprintf("Fonds insuffisants. Coût: %d€, Solde: %d€", totalCost, current), nil)
-			}
-
-			// Check existing
-			existing, _ := app.FindFirstRecordByFilter("inventory", fmt.Sprintf("company='%s' && item='%s'", companyId, data.ItemId))
-			if existing != nil {
-				// Update
-				curr := existing.GetInt("quantity")
-				existing.Set("quantity", curr+data.Quantity)
-				if err := app.Save(existing); err != nil {
-					return apis.NewBadRequestError("Erreur mise à jour inventaire", err)
-				}
-			} else {
-				// Create
-				collection, err := app.FindCollectionByNameOrId("inventory")
+			return app.RunInTransaction(func(txApp core.App) error {
+				company, err := txApp.FindRecordById("companies", companyId)
 				if err != nil {
-					return apis.NewBadRequestError("Erreur collection", err)
+					return apis.NewBadRequestError("Entreprise introuvable", nil)
 				}
-				newRecord := core.NewRecord(collection)
-				newRecord.Set("company", companyId)
-				newRecord.Set("item", data.ItemId)
-				newRecord.Set("quantity", data.Quantity)
-				if err := app.Save(newRecord); err != nil {
-					return apis.NewBadRequestError("Erreur création inventaire", err)
+				if company.GetString("ceo") != authRecord.Id && !authRecord.IsSuperuser() {
+					return apis.NewForbiddenError("Seul le PDG peut acheter", nil)
 				}
-				existing = newRecord
-			}
 
-			// Deduct
-			company.Set("balance", current-totalCost)
-			if err := app.Save(company); err != nil {
-				// Revert
-				if existing.GetInt("quantity") == data.Quantity {
-					// Was create, delete
-					app.Delete(existing)
+				item, err := txApp.FindRecordById("items", data.ItemId)
+				if err != nil {
+					return apis.NewBadRequestError("Item introuvable", nil)
+				}
+
+				// Block purchase of minable items
+				if item.GetBool("minable") {
+					return apis.NewBadRequestError("Les ressources brutes ne peuvent pas être achetées. Récoltez-les manuellement !", nil)
+				}
+
+				// Check circulating_supply availability
+				circulatingSupply := item.GetInt("circulating_supply")
+				if circulatingSupply <= 0 {
+					return apis.NewBadRequestError("Rupture de stock ! Nexa-Bank n'a plus cet item disponible aujourd'hui.", nil)
+				}
+				if circulatingSupply < data.Quantity {
+					return apis.NewBadRequestError(fmt.Sprintf("Stock insuffisant. Disponible: %d, Demandé: %d", circulatingSupply, data.Quantity), nil)
+				}
+
+				itemPrice := item.GetInt("base_price")
+				totalCost := itemPrice * data.Quantity
+				current := company.GetInt("balance")
+				if current < totalCost {
+					return apis.NewBadRequestError(fmt.Sprintf("Fonds insuffisants. Coût: %d€, Solde: %d€", totalCost, current), nil)
+				}
+
+				// Check existing
+				existing, _ := txApp.FindFirstRecordByFilter("inventory", fmt.Sprintf("company='%s' && item='%s'", companyId, data.ItemId))
+				if existing != nil {
+					// Update
+					curr := existing.GetInt("quantity")
+					existing.Set("quantity", curr+data.Quantity)
+					if err := txApp.Save(existing); err != nil {
+						return apis.NewBadRequestError("Erreur mise à jour inventaire", err)
+					}
 				} else {
-					// Was update, revert
-					existing.Set("quantity", existing.GetInt("quantity")-data.Quantity)
-					app.Save(existing)
+					// Create
+					collection, err := txApp.FindCollectionByNameOrId("inventory")
+					if err != nil {
+						return apis.NewBadRequestError("Erreur collection", err)
+					}
+					newRecord := core.NewRecord(collection)
+					newRecord.Set("company", companyId)
+					newRecord.Set("item", data.ItemId)
+					newRecord.Set("quantity", data.Quantity)
+					if err := txApp.Save(newRecord); err != nil {
+						return apis.NewBadRequestError("Erreur création inventaire", err)
+					}
+					existing = newRecord
 				}
-				return apis.NewBadRequestError("Erreur sauvegarde entreprise", err)
-			}
 
-			app.Logger().Info("[PURCHASE] Company purchased item", "companyId", companyId, "itemId", data.ItemId, "qty", data.Quantity, "totalCost", totalCost)
+				// Deduct
+				company.Set("balance", current-totalCost)
+				if err := txApp.Save(company); err != nil {
+					// Revert is automatic in transaction if we return error
+					return apis.NewBadRequestError("Erreur sauvegarde entreprise", err)
+				}
 
-			// Decrement circulating_supply (Nexa-Bank stock consumed)
-			item.Set("circulating_supply", circulatingSupply-data.Quantity)
-			app.Save(item)
+				app.Logger().Info("[PURCHASE] Company purchased item", "companyId", companyId, "itemId", data.ItemId, "qty", data.Quantity, "totalCost", totalCost)
 
-			return c.JSON(200, map[string]interface{}{
-				"success":        true,
-				"message":        "Achat réussi",
-				"record":         existing,
-				"cost":           totalCost,
-				"remainingStock": circulatingSupply - data.Quantity,
+				// Decrement circulating_supply (Nexa-Bank stock consumed)
+				item.Set("circulating_supply", circulatingSupply-data.Quantity)
+				if err := txApp.Save(item); err != nil {
+					return apis.NewBadRequestError("Erreur sauvegarde item", err)
+				}
+
+				return c.JSON(200, map[string]interface{}{
+					"success":        true,
+					"message":        "Achat réussi",
+					"record":         existing,
+					"cost":           totalCost,
+					"remainingStock": circulatingSupply - data.Quantity,
+				})
 			})
 		})
 
@@ -296,38 +297,40 @@ func RegisterEndpoints(app *pocketbase.PocketBase, inv *InventoryLogic, eco *Eco
 				return apis.NewBadRequestError("companyId requis", nil)
 			}
 
-			company, err := app.FindRecordById("companies", companyId)
-			if err != nil {
-				return apis.NewBadRequestError("Entreprise introuvable", nil)
-			}
+			return app.RunInTransaction(func(txApp core.App) error {
+				company, err := txApp.FindRecordById("companies", companyId)
+				if err != nil {
+					return apis.NewBadRequestError("Entreprise introuvable", nil)
+				}
 
-			// Verify CEO
-			if company.GetString("ceo") != authRecord.Id && !authRecord.IsSuperuser() {
-				return apis.NewForbiddenError("Seul le PDG peut faire level up l'entreprise", nil)
-			}
+				// Verify CEO
+				if company.GetString("ceo") != authRecord.Id && !authRecord.IsSuperuser() {
+					return apis.NewForbiddenError("Seul le PDG peut faire level up l'entreprise", nil)
+				}
 
-			currentLevel := company.GetInt("level")
-			cost := int(math.Floor(1000 * math.Pow(float64(currentLevel), 1.5)))
-			repReq := currentLevel * 10
+				currentLevel := company.GetInt("level")
+				cost := int(math.Floor(1000 * math.Pow(float64(currentLevel), 1.5)))
+				repReq := currentLevel * 10
 
-			balance := company.GetInt("balance")
+				balance := company.GetInt("balance")
 
-			if balance < cost {
-				return apis.NewBadRequestError(fmt.Sprintf("Fonds insuffisants. Coût: %d€, Solde: %d€", cost, balance), nil)
-			}
+				if balance < cost {
+					return apis.NewBadRequestError(fmt.Sprintf("Fonds insuffisants. Coût: %d€, Solde: %d€", cost, balance), nil)
+				}
 
-			company.Set("balance", balance-cost)
-			company.Set("level", currentLevel+1)
-			if err := app.Save(company); err != nil {
-				return apis.NewBadRequestError("Erreur lors de la sauvegarde", err)
-			}
+				company.Set("balance", balance-cost)
+				company.Set("level", currentLevel+1)
+				if err := txApp.Save(company); err != nil {
+					return apis.NewBadRequestError("Erreur lors de la sauvegarde", err)
+				}
 
-			return c.JSON(200, map[string]interface{}{
-				"success":  true,
-				"message":  "Entreprise level up réussie",
-				"newLevel": currentLevel + 1,
-				"cost":     cost,
-				"repReq":   repReq,
+				return c.JSON(200, map[string]interface{}{
+					"success":  true,
+					"message":  "Entreprise level up réussie",
+					"newLevel": currentLevel + 1,
+					"cost":     cost,
+					"repReq":   repReq,
+				})
 			})
 		})
 
@@ -359,42 +362,134 @@ func RegisterEndpoints(app *pocketbase.PocketBase, inv *InventoryLogic, eco *Eco
 				quantity = 50 // Max 50 per batch
 			}
 
-			// Validate CEO ownership
-			company, err := app.FindRecordById("companies", companyId)
-			if err != nil {
-				return apis.NewBadRequestError("Company introuvable", nil)
-			}
-
-			if !authRecord.IsSuperuser() && company.GetString("ceo") != authRecord.Id {
-				return apis.NewForbiddenError("Vous n'êtes pas le PDG de cette entreprise", nil)
-			}
-
-			// Hire multiple employees
-			hiredRecords := []*core.Record{}
-			totalCost := 0
-			errors := []string{}
-
-			for i := 0; i < quantity; i++ {
-				hired, err := emp.HireEmployee(companyId)
+			return app.RunInTransaction(func(txApp core.App) error {
+				// Validate CEO ownership
+				company, err := txApp.FindRecordById("companies", companyId)
 				if err != nil {
-					errors = append(errors, err.Error())
-					break // Stop on first error (usually balance insufficient)
+					return apis.NewBadRequestError("Company introuvable", nil)
 				}
-				hiredRecords = append(hiredRecords, hired.Record)
-				totalCost += hired.Cost
+
+				if !authRecord.IsSuperuser() && company.GetString("ceo") != authRecord.Id {
+					return apis.NewForbiddenError("Vous n'êtes pas le PDG de cette entreprise", nil)
+				}
+
+				// Hire multiple employees
+				hiredRecords := []*core.Record{}
+				totalCost := 0
+				errors := []string{}
+
+				for i := 0; i < quantity; i++ {
+					hired, err := emp.HireEmployee(txApp, companyId)
+					if err != nil {
+						errors = append(errors, err.Error())
+						// Stop on first error (usually balance insufficient)
+						// If we error here, do we want to commit previous hires?
+						// "RunInTransaction" rolls back on error unless we return nil!
+						// If we want partial success, we shouldn't use one big transaction, OR we swallow error.
+						// BUT for atomicity, "All or Nothing" is safer for "bulk hire".
+						// Let's go All or Nothing.
+						return apis.NewBadRequestError(err.Error(), nil)
+					}
+					hiredRecords = append(hiredRecords, hired.Record)
+					totalCost += hired.Cost
+				}
+
+				if len(hiredRecords) == 0 {
+					// Should have been caught by loop error return, but safety check
+					return apis.NewBadRequestError("Aucun employé recruté", nil)
+				}
+
+				return c.JSON(200, map[string]interface{}{
+					"success":    true,
+					"message":    fmt.Sprintf("%d employé(s) recruté(s) avec succès", len(hiredRecords)),
+					"records":    hiredRecords,
+					"totalCost":  totalCost,
+					"hiredCount": len(hiredRecords),
+					"errors":     errors,
+				})
+			})
+		})
+
+		// TECHNOLOGY UNLOCK Custom Endpoint
+		e.Router.POST("/api/company/unlock-tech", func(c *core.RequestEvent) error {
+			authRecord := c.Auth
+			if authRecord == nil {
+				return apis.NewUnauthorizedError("Vous devez être connecté.", nil)
 			}
 
-			if len(hiredRecords) == 0 {
-				return apis.NewBadRequestError(errors[0], nil)
+			data := struct {
+				CompanyId string `json:"companyId" form:"companyId"`
+				TechId    string `json:"techId" form:"techId"`
+			}{}
+			if err := c.BindBody(&data); err != nil {
+				return apis.NewBadRequestError("Corps JSON invalide", err)
 			}
 
-			return c.JSON(200, map[string]interface{}{
-				"success":    true,
-				"message":    fmt.Sprintf("%d employé(s) recruté(s) avec succès", len(hiredRecords)),
-				"records":    hiredRecords,
-				"totalCost":  totalCost,
-				"hiredCount": len(hiredRecords),
-				"errors":     errors,
+			if data.CompanyId == "" || data.TechId == "" {
+				return apis.NewBadRequestError("companyId et techId requis", nil)
+			}
+
+			return app.RunInTransaction(func(txApp core.App) error {
+				company, err := txApp.FindRecordById("companies", data.CompanyId)
+				if err != nil {
+					return apis.NewBadRequestError("Entreprise introuvable", nil)
+				}
+
+				if !authRecord.IsSuperuser() && company.GetString("ceo") != authRecord.Id {
+					return apis.NewForbiddenError("Vous n'êtes pas le PDG", nil)
+				}
+
+				tech, err := txApp.FindRecordById("technologies", data.TechId)
+				if err != nil {
+					return apis.NewBadRequestError("Technologie introuvable", nil)
+				}
+
+				// Check Requirements
+				reqLevel := tech.GetInt("required_level")
+				currLevel := company.GetInt("level")
+				if currLevel < reqLevel {
+					return apis.NewBadRequestError(fmt.Sprintf("Niveau insuffisant. Niveau %d requis (vous êtes niveau %d)", reqLevel, currLevel), nil)
+				}
+
+				// Check duplicates
+				filter := fmt.Sprintf("company = '%s' && technology = '%s'", data.CompanyId, data.TechId)
+				existing, _ := txApp.FindFirstRecordByFilter("company_techs", filter)
+				if existing != nil {
+					return apis.NewBadRequestError("Cette technologie est déjà acquise", nil)
+				}
+
+				// Check Balance
+				cost := tech.GetFloat("cost")
+				balance := company.GetFloat("balance")
+				if balance < cost {
+					return apis.NewBadRequestError(fmt.Sprintf("Fonds insuffisants. Requis: %.2f, Actuel: %.2f", cost, balance), nil)
+				}
+
+				// 1. Create company_techs record
+				collection, err := txApp.FindCollectionByNameOrId("company_techs")
+				if err != nil {
+					return err
+				}
+				newTech := core.NewRecord(collection)
+				newTech.Set("company", data.CompanyId)
+				newTech.Set("technology", data.TechId)
+				// Unlock Item?
+
+				if err := txApp.Save(newTech); err != nil {
+					return apis.NewBadRequestError(fmt.Sprintf("Erreur lors du déblocage: %v", err), err)
+				}
+
+				// 2. Deduct Balance
+				company.Set("balance", balance-cost)
+				if err := txApp.Save(company); err != nil {
+					return apis.NewBadRequestError("Erreur lors du paiement", err)
+				}
+
+				return c.JSON(200, map[string]interface{}{
+					"success": true,
+					"message": fmt.Sprintf("Technologie %s débloquée !", tech.GetString("name")),
+					"cost":    cost,
+				})
 			})
 		})
 
@@ -766,55 +861,94 @@ func RegisterEndpoints(app *pocketbase.PocketBase, inv *InventoryLogic, eco *Eco
 				return apis.NewBadRequestError("Aucune entreprise active", nil)
 			}
 
-			company, err := app.FindRecordById("companies", companyId)
-			if err != nil {
-				return apis.NewBadRequestError("Entreprise introuvable", nil)
-			}
+			// Run in transaction for Atomicity against Race Conditions
+			return app.RunInTransaction(func(txApp core.App) error {
+				// 1. Fetch company to verify ownership and initial state Check
+				company, err := txApp.FindRecordById("companies", companyId)
+				if err != nil {
+					return apis.NewBadRequestError("Entreprise introuvable", nil)
+				}
 
-			if company.GetString("ceo") != authRecord.Id && !authRecord.IsSuperuser() {
-				return apis.NewForbiddenError("Accès refusé", nil)
-			}
+				if company.GetString("ceo") != authRecord.Id && !authRecord.IsSuperuser() {
+					return apis.NewForbiddenError("Accès refusé", nil)
+				}
 
-			// Check if harvesting
-			isProducing := company.GetDateTime("is_producing")
-			harvestingItemId := company.GetString("item_harvesting")
+				// 2. Snapshot Read
+				isProducing := company.GetDateTime("is_producing")
+				harvestingItemId := company.GetString("item_harvesting")
 
-			if isProducing.IsZero() || harvestingItemId == "" {
-				return apis.NewBadRequestError("Aucune récolte en cours", nil)
-			}
+				if isProducing.IsZero() || harvestingItemId == "" {
+					return apis.NewBadRequestError("Aucune récolte en cours (Snapshot)", nil)
+				}
 
-			item, err := app.FindRecordById("items", harvestingItemId)
-			if err != nil {
-				return apis.NewBadRequestError("Item introuvable", nil)
-			}
+				item, err := txApp.FindRecordById("items", harvestingItemId)
+				if err != nil {
+					return apis.NewBadRequestError("Item introuvable", nil) // Should not happen
+				}
 
-			// Check if complete
-			productionTime := item.GetInt("production_time")
-			elapsed := time.Since(isProducing.Time()).Seconds()
+				productionTime := item.GetInt("production_time")
+				elapsed := time.Since(isProducing.Time()).Seconds()
 
-			if elapsed < float64(productionTime) {
-				remaining := float64(productionTime) - elapsed
-				return apis.NewBadRequestError(fmt.Sprintf("Récolte pas encore terminée. %.0f secondes restantes", remaining), nil)
-			}
+				if elapsed < float64(productionTime) {
+					remaining := float64(productionTime) - elapsed
+					return apis.NewBadRequestError(fmt.Sprintf("Récolte pas encore terminée. %.0f secondes restantes", remaining), nil)
+				}
 
-			// Add to inventory
-			err = inv.UpdateInventory(companyId, harvestingItemId, 1)
-			if err != nil {
-				return apis.NewBadRequestError("Erreur ajout inventaire: "+err.Error(), nil)
-			}
+				// 3. ATOMIC CLAIM via Conditional Update (Optimistic Locking)
+				// We enforce that we are the one setting it to empty, verifying it is NOT empty right now.
+				res, err := txApp.DB().NewQuery(`
+					UPDATE companies 
+					SET is_producing = '', item_harvesting = '' 
+					WHERE id = {:id} AND is_producing != '' AND item_harvesting != ''
+				`).Bind(dbx.Params{
+					"id": company.Id,
+				}).Execute()
 
-			// Reset harvest state
-			company.Set("is_producing", types.DateTime{})
-			company.Set("item_harvesting", "")
-			if err := app.Save(company); err != nil {
-				return apis.NewBadRequestError("Erreur sauvegarde", err)
-			}
+				if err != nil {
+					return apis.NewBadRequestError("Erreur base de données", err)
+				}
 
-			return c.JSON(200, map[string]interface{}{
-				"success":  true,
-				"message":  fmt.Sprintf("1x %s collecté!", item.GetString("name")),
-				"itemName": item.GetString("name"),
-				"quantity": 1,
+				rows, _ := res.RowsAffected()
+				if rows == 0 {
+					// Race condition lost: Another request claimed it first
+					return apis.NewBadRequestError("Récolte déjà effectuée par une autre requête", nil)
+				}
+
+				// 4. Update Inventory Logic Inline (using txApp for transaction safety)
+				// (We cannot use inv.UpdateInventory() because it uses the global app instance, not the transaction)
+
+				// Try Find inventory
+				filter := fmt.Sprintf("company = '%s' && item = '%s'", companyId, harvestingItemId)
+				invRecord, err := txApp.FindFirstRecordByFilter("inventory", filter)
+
+				if err != nil {
+					// Not found -> Create
+					invColl, err := txApp.FindCollectionByNameOrId("inventory")
+					if err != nil {
+						return err
+					}
+					newInv := core.NewRecord(invColl)
+					newInv.Set("company", companyId)
+					newInv.Set("item", harvestingItemId)
+					newInv.Set("quantity", 1)
+					if err := txApp.Save(newInv); err != nil {
+						return apis.NewBadRequestError("Erreur création inventaire", err)
+					}
+				} else {
+					// Found -> Update
+					qty := invRecord.GetInt("quantity")
+					invRecord.Set("quantity", qty+1)
+					if err := txApp.Save(invRecord); err != nil {
+						return apis.NewBadRequestError("Erreur mise à jour inventaire", err)
+					}
+				}
+
+				return c.JSON(200, map[string]interface{}{
+					"success":  true,
+					"message":  fmt.Sprintf("1x %s collecté!", item.GetString("name")),
+					"itemName": item.GetString("name"),
+					"quantity": 1,
+				})
 			})
 		})
 

@@ -40,12 +40,12 @@ func registerMachineHooks(app *pocketbase.PocketBase, inv *InventoryLogic) {
 		}
 
 		// 3. Check Inventory Stock
-		if !inv.HasEnoughItems(companyId, machineItemId, 1) {
+		if !inv.HasEnoughItems(app, companyId, machineItemId, 1) {
 			return apis.NewBadRequestError("Vous n'avez pas cette machine en stock dans votre inventaire.", nil)
 		}
 
 		// 4. Deduct from Inventory
-		if err := inv.UpdateInventory(companyId, machineItemId, -1); err != nil {
+		if err := inv.UpdateInventory(app, companyId, machineItemId, -1); err != nil {
 			return apis.NewBadRequestError(fmt.Sprintf("Erreur lors de la mise à jour de l'inventaire: %v", err), nil)
 		}
 

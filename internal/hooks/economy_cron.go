@@ -246,7 +246,7 @@ func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
 						// Try convert 1 fuel from any allowed
 						consumed := false
 						for _, itemId := range consumeItemIds {
-							_, err := l.inventory.ConsumeItem(companyId, itemId, 1)
+							_, err := l.inventory.ConsumeItem(l.app, companyId, itemId, 1)
 							if err == nil {
 								consumed = true
 								break
@@ -288,7 +288,7 @@ func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
 
 					// Try consume 1 fuel from any allowed
 					for _, itemId := range consumeItemIds {
-						_, err := l.inventory.ConsumeItem(companyId, itemId, 1)
+						_, err := l.inventory.ConsumeItem(l.app, companyId, itemId, 1)
 						if err == nil {
 							// Successfully consumed fuel, produce energy
 							if canStore > 0 {
@@ -329,7 +329,7 @@ func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
 						// Use ConsumeInputs which should handle both formats if implemented correctly,
 						// or we need to implement robust recipe consumption here.
 						// Assuming l.inventory.ConsumeInputs handles the recipe consumption logic (ingredients AND inputs_items)
-						_, err := l.inventory.ConsumeInputs(companyId, recipeId, 1)
+						_, err := l.inventory.ConsumeInputs(l.app, companyId, recipeId, 1)
 						if err == nil {
 							assignment.Set("production_started_at", types.NowDateTime())
 							l.app.Save(assignment)
@@ -352,7 +352,7 @@ func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
 							// 2. Produce Output (Waste/Bi-product) if any
 							outputItemId := recipe.GetString("output_item")
 							if outputItemId != "" {
-								l.inventory.AddRefinedItem(companyId, outputItemId, 1)
+								l.inventory.AddRefinedItem(l.app, companyId, outputItemId, 1)
 							}
 
 							// Reset
@@ -439,7 +439,7 @@ func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
 		if recipeId != "" {
 			// --- RECIPE PRODUCTION ---
 			// Check technology requirement first
-			hasTech, techName := l.inventory.HasRequiredTechnology(companyId, recipeId)
+			hasTech, techName := l.inventory.HasRequiredTechnology(l.app, companyId, recipeId)
 			if !hasTech {
 				l.app.Logger().Info("[ECONOMY] Machine blocked: missing technology",
 					"machine", machineItem.GetString("name"),
@@ -462,7 +462,7 @@ func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
 
 				if startedAt.IsZero() {
 					// Start Production
-					_, err := l.inventory.ConsumeInputs(companyId, recipeId, finalQty)
+					_, err := l.inventory.ConsumeInputs(l.app, companyId, recipeId, finalQty)
 					if err == nil {
 						assignment.Set("production_started_at", types.NowDateTime())
 						l.app.Save(assignment)
@@ -471,7 +471,7 @@ func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
 					// Check if finished (using effective time)
 					elapsed := time.Since(startedAt.Time()).Seconds()
 					if elapsed >= effectiveProductionTime {
-						err := l.inventory.CompleteProduction(companyId, recipeId, finalQty)
+						err := l.inventory.CompleteProduction(l.app, companyId, recipeId, finalQty)
 						if err == nil {
 							// Reset
 							assignment.Set("production_started_at", types.DateTime{}) // Zero
@@ -483,7 +483,7 @@ func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
 				}
 			} else {
 				// Short Production (Immediate) - Only if production_time is 0
-				_, _ = l.inventory.ProduceItem(companyId, recipeId, finalQty)
+				_, _ = l.inventory.ProduceItem(l.app, companyId, recipeId, finalQty)
 			}
 
 		} else if productId != "" {
@@ -506,7 +506,7 @@ func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
 					elapsed := time.Since(startedAt.Time()).Seconds()
 					if elapsed >= effectiveProductionTime {
 						// Complete Production
-						err := l.inventory.UpdateInventory(companyId, productId, finalQty)
+						err := l.inventory.UpdateInventory(l.app, companyId, productId, finalQty)
 						if err == nil {
 							// Reset
 							assignment.Set("production_started_at", types.DateTime{}) // Zero
@@ -518,7 +518,7 @@ func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
 				}
 			} else {
 				// Immediate Production (Every tick) - Only if production_time is 0 or missing
-				_ = l.inventory.UpdateInventory(companyId, productId, finalQty)
+				_ = l.inventory.UpdateInventory(l.app, companyId, productId, finalQty)
 			}
 		}
 	}

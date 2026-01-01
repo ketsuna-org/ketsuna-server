@@ -22,7 +22,7 @@ type HiredEmployee struct {
 	NewSaldo int          `json:"newSaldo"`
 }
 
-func (el *EmployeeLogic) HireEmployee(companyId string) (*HiredEmployee, error) {
+func (el *EmployeeLogic) HireEmployee(app core.App, companyId string) (*HiredEmployee, error) {
 	// 1. Generate Stats
 	first := []string{"Jean", "Pierre", "Paul", "Jacques", "Marie", "Sophie", "Lucie", "Camille", "Thomas", "Nicolas", "Julien", "Antoine", "Lucas", "Emma", "Léa", "Chloé", "Manon", "Alex", "Maxime", "Léo", "Sarah", "Julie", "Hugo", "Gabriel", "Arthur"}
 	last := []string{"Dupont", "Durand", "Martin", "Bernard", "Petit", "Robert", "Richard", "Simon", "Michel", "Lefebvre", "Moreau", "Laurent", "Garcia", "Roux", "David", "Bertrand", "Garnier", "Lambert", "Faure", "Rousseau", "Blanc", "Guerin", "Boyer", "Chevalier", "Mathieu"}
@@ -75,7 +75,7 @@ func (el *EmployeeLogic) HireEmployee(companyId string) (*HiredEmployee, error) 
 	totalRequired := hiringFee + requiredReserve
 
 	// 3. Transaction
-	company, err := el.app.FindRecordById("companies", companyId)
+	company, err := app.FindRecordById("companies", companyId)
 	if err != nil {
 		return nil, fmt.Errorf("company not found")
 	}
@@ -86,7 +86,7 @@ func (el *EmployeeLogic) HireEmployee(companyId string) (*HiredEmployee, error) 
 	}
 
 	// 4. Create Employee Record
-	collection, err := el.app.FindCollectionByNameOrId("employees")
+	collection, err := app.FindCollectionByNameOrId("employees")
 	if err != nil {
 		return nil, err
 	}
@@ -99,17 +99,17 @@ func (el *EmployeeLogic) HireEmployee(companyId string) (*HiredEmployee, error) 
 	record.Set("efficiency", efficiencyFormatted)
 	record.Set("salary", salary)
 
-	if err := el.app.Save(record); err != nil {
+	if err := app.Save(record); err != nil {
 		return nil, fmt.Errorf("failed to create employee record: %v", err)
 	}
 
 	// 5. Deduct Balance & Increment Count
 	company.Set("balance", balance-hiringFee)
 	company.Set("employee_count", company.GetInt("employee_count")+1)
-	if err := el.app.Save(company); err != nil {
+	if err := app.Save(company); err != nil {
 		// Rollback employee creation if money deduction fails?
 		// ideally yes, but for now let's just error
-		el.app.Delete(record)
+		app.Delete(record)
 		return nil, fmt.Errorf("failed to update company balance: %v", err)
 	}
 
