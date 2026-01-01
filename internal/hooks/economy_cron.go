@@ -223,11 +223,11 @@ func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
 				genEfficiency = 1.0 // Default for unmanned generators
 			}
 
-			consumeItemId := machineItem.GetString("can_consume")
 			recipeId := machineItem.GetString("use_recipe")
 
 			// CASE 1: Simple Consumption (Direct Fuel -> Energy)
-			if consumeItemId != "" {
+			consumeItemIds := machineItem.GetStringSlice("can_consume")
+			if len(consumeItemIds) > 0 {
 				// Initialize production if not started (instant consumption model for simple fuel)
 				// Or we can use production_time from current machine if we want timed cycles?
 				// Let's assume simple consumption is instant per tick for now, or check production_time of machine itself
@@ -236,9 +236,24 @@ func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
 				if machineProdTime > 0 {
 					startedAt := assignment.GetDateTime("production_started_at")
 					if startedAt.IsZero() {
-						// Try convert 1 fuel
-						_, err := l.inventory.ConsumeItem(companyId, consumeItemId, 1)
-						if err == nil {
+						// Don't consume if storage is full
+						canStore := machineItem.GetFloat("can_store_energy")
+						currentStored := assignment.GetFloat("stored_energy")
+						if canStore > 0 && currentStored >= canStore {
+							continue
+						}
+
+						// Try convert 1 fuel from any allowed
+						consumed := false
+						for _, itemId := range consumeItemIds {
+							_, err := l.inventory.ConsumeItem(companyId, itemId, 1)
+							if err == nil {
+								consumed = true
+								break
+							}
+						}
+
+						if consumed {
 							assignment.Set("production_started_at", types.NowDateTime())
 							l.app.Save(assignment)
 						}
@@ -264,19 +279,30 @@ func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
 					}
 				} else {
 					// Instant consumption (1 fuel per tick)
-					_, err := l.inventory.ConsumeItem(companyId, consumeItemId, 1)
-					if err == nil {
-						canStore := machineItem.GetFloat("can_store_energy")
-						if canStore > 0 {
-							currentStored := assignment.GetFloat("stored_energy")
-							energyProduced := produceEnergy * genEfficiency
-							newStored := currentStored + energyProduced
-							if newStored > canStore {
-								newStored = canStore
+					// Don't consume if storage is full
+					canStore := machineItem.GetFloat("can_store_energy")
+					currentStored := assignment.GetFloat("stored_energy")
+					if canStore > 0 && currentStored >= canStore {
+						continue
+					}
+
+					// Try consume 1 fuel from any allowed
+					for _, itemId := range consumeItemIds {
+						_, err := l.inventory.ConsumeItem(companyId, itemId, 1)
+						if err == nil {
+							// Successfully consumed fuel, produce energy
+							if canStore > 0 {
+								currentStored := assignment.GetFloat("stored_energy")
+								energyProduced := produceEnergy * genEfficiency
+								newStored := currentStored + energyProduced
+								if newStored > canStore {
+									newStored = canStore
+								}
+								assignment.Set("stored_energy", newStored)
+								// No need to save if nothing else changed, but stored_energy changed
+								l.app.Save(assignment)
 							}
-							assignment.Set("stored_energy", newStored)
-							// No need to save if nothing else changed, but stored_energy changed
-							l.app.Save(assignment)
+							break // Stop after one success
 						}
 					}
 				}
@@ -292,6 +318,13 @@ func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
 				if productionTime > 0 {
 					startedAt := assignment.GetDateTime("production_started_at")
 					if startedAt.IsZero() {
+						// Don't consume if storage is full
+						canStore := machineItem.GetFloat("can_store_energy")
+						currentStored := assignment.GetFloat("stored_energy")
+						if canStore > 0 && currentStored >= canStore {
+							continue
+						}
+
 						// Try consume recipe inputs
 						// Use ConsumeInputs which should handle both formats if implemented correctly,
 						// or we need to implement robust recipe consumption here.
