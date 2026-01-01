@@ -47,9 +47,9 @@ func registerExplorationEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent
 				return apis.NewBadRequestError("Ressource cible introuvable", nil)
 			}
 
-			// Verify it is minable
-			if !item.GetBool("minable") {
-				return apis.NewBadRequestError("Cet item n'est pas une ressource minable", nil)
+			// Verify it is explorable
+			if !item.GetBool("is_explorable") {
+				return apis.NewBadRequestError("Cet item ne peut pas être exploré", nil)
 			}
 
 			// --- Cost Logic ---
