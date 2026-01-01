@@ -206,10 +206,131 @@ func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
 			energySurplus = 0
 		}
 
-		// Skip energy producers (they don't produce items)
+		// Handle energy-producing machines (generators, solar panels, etc.)
 		produceEnergy := machineItem.GetFloat("produce_energy")
 		if produceEnergy > 0 {
-			continue // Energy producers don't produce physical items
+			// Calculate efficiency for this machine
+			assignedEmpIds := assignment.GetStringSlice("employees")
+			genEfficiency := 0.0
+			for _, empId := range assignedEmpIds {
+				for _, emp := range employees {
+					if emp.Id == empId {
+						genEfficiency += emp.GetFloat("efficiency")
+					}
+				}
+			}
+			if genEfficiency <= 0 {
+				genEfficiency = 1.0 // Default for unmanned generators
+			}
+
+			consumeItemId := machineItem.GetString("can_consume")
+			recipeId := machineItem.GetString("use_recipe")
+
+			// CASE 1: Simple Consumption (Direct Fuel -> Energy)
+			if consumeItemId != "" {
+				// Initialize production if not started (instant consumption model for simple fuel)
+				// Or we can use production_time from current machine if we want timed cycles?
+				// Let's assume simple consumption is instant per tick for now, or check production_time of machine itself
+				machineProdTime := machineItem.GetInt("production_time")
+
+				if machineProdTime > 0 {
+					startedAt := assignment.GetDateTime("production_started_at")
+					if startedAt.IsZero() {
+						// Try convert 1 fuel
+						_, err := l.inventory.ConsumeItem(companyId, consumeItemId, 1)
+						if err == nil {
+							assignment.Set("production_started_at", types.NowDateTime())
+							l.app.Save(assignment)
+						}
+					} else {
+						// Check completion
+						elapsed := time.Since(startedAt.Time()).Seconds()
+						if elapsed >= float64(machineProdTime) {
+							// Produce Energy
+							canStore := machineItem.GetFloat("can_store_energy")
+							if canStore > 0 {
+								currentStored := assignment.GetFloat("stored_energy")
+								energyProduced := produceEnergy * genEfficiency
+								newStored := currentStored + energyProduced
+								if newStored > canStore {
+									newStored = canStore
+								}
+								assignment.Set("stored_energy", newStored)
+							}
+							// Reset
+							assignment.Set("production_started_at", types.DateTime{})
+							l.app.Save(assignment)
+						}
+					}
+				} else {
+					// Instant consumption (1 fuel per tick)
+					_, err := l.inventory.ConsumeItem(companyId, consumeItemId, 1)
+					if err == nil {
+						canStore := machineItem.GetFloat("can_store_energy")
+						if canStore > 0 {
+							currentStored := assignment.GetFloat("stored_energy")
+							energyProduced := produceEnergy * genEfficiency
+							newStored := currentStored + energyProduced
+							if newStored > canStore {
+								newStored = canStore
+							}
+							assignment.Set("stored_energy", newStored)
+							// No need to save if nothing else changed, but stored_energy changed
+							l.app.Save(assignment)
+						}
+					}
+				}
+
+			} else if recipeId != "" {
+				// CASE 2: Recipe (Complex -> potentially waste output)
+				recipe, err := l.app.FindRecordById("recipes", recipeId)
+				if err != nil {
+					continue
+				}
+				productionTime := recipe.GetInt("production_time")
+
+				if productionTime > 0 {
+					startedAt := assignment.GetDateTime("production_started_at")
+					if startedAt.IsZero() {
+						// Try consume recipe inputs
+						// Use ConsumeInputs which should handle both formats if implemented correctly,
+						// or we need to implement robust recipe consumption here.
+						// Assuming l.inventory.ConsumeInputs handles the recipe consumption logic (ingredients AND inputs_items)
+						_, err := l.inventory.ConsumeInputs(companyId, recipeId, 1)
+						if err == nil {
+							assignment.Set("production_started_at", types.NowDateTime())
+							l.app.Save(assignment)
+						}
+					} else {
+						elapsed := time.Since(startedAt.Time()).Seconds()
+						if elapsed >= float64(productionTime) {
+							// 1. Produce Energy
+							canStore := machineItem.GetFloat("can_store_energy")
+							if canStore > 0 {
+								currentStored := assignment.GetFloat("stored_energy")
+								energyProduced := produceEnergy * genEfficiency
+								newStored := currentStored + energyProduced
+								if newStored > canStore {
+									newStored = canStore
+								}
+								assignment.Set("stored_energy", newStored)
+							}
+
+							// 2. Produce Output (Waste/Bi-product) if any
+							outputItemId := recipe.GetString("output_item")
+							if outputItemId != "" {
+								l.inventory.AddRefinedItem(companyId, outputItemId, 1)
+							}
+
+							// Reset
+							assignment.Set("production_started_at", types.DateTime{})
+							l.app.Save(assignment)
+						}
+					}
+				}
+			}
+			// If neither, it's passive (solar)
+			continue
 		}
 
 		// Calculate Efficiency

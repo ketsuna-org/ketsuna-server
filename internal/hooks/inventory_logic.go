@@ -99,7 +99,27 @@ func (l *InventoryLogic) HasRequiredTechnology(companyId, recipeId string) (bool
 	return true, ""
 }
 
+// ConsumeItem is a helper to consume a single item (simplifies callers)
+func (l *InventoryLogic) ConsumeItem(companyId, itemId string, quantity int) (float64, error) {
+	if quantity <= 0 {
+		return 0, fmt.Errorf("quantité invalide")
+	}
+	if !l.HasEnoughItems(companyId, itemId, quantity) {
+		return 0, fmt.Errorf("stock insuffisant")
+	}
+	if err := l.UpdateInventory(companyId, itemId, -quantity); err != nil {
+		return 0, err
+	}
+	return 0, nil // No XP for simple consumption
+}
+
+// AddRefinedItem is a helper to add an item (simplifies callers, same as UpdateInventory but explicit intent)
+func (l *InventoryLogic) AddRefinedItem(companyId, itemId string, quantity int) error {
+	return l.UpdateInventory(companyId, itemId, quantity)
+}
+
 // ConsumeInputs verifies requirements and subtracts ingredients for a recipe
+// Supports both 'inputs_items' (simple list) and 'ingredients' (relation with specific quantities)
 // Returns xpGained
 func (l *InventoryLogic) ConsumeInputs(companyId, recipeId string, quantity int) (float64, error) {
 	company, err := l.app.FindRecordById("companies", companyId)
@@ -127,6 +147,7 @@ func (l *InventoryLogic) ConsumeInputs(companyId, recipeId string, quantity int)
 	}
 
 	// 2. Check Stock for all inputs
+	// A. Check 'inputs_items' (Simple list with global input_quantity)
 	inputIds := recipe.GetStringSlice("inputs_items")
 	unitQty := recipe.GetInt("input_quantity")
 	if unitQty == 0 {
@@ -145,15 +166,51 @@ func (l *InventoryLogic) ConsumeInputs(companyId, recipeId string, quantity int)
 		}
 	}
 
+	// B. Check 'ingredients' (Relation to recipes_ingredients)
+	ingredientRelationIds := recipe.GetStringSlice("ingredients")
+	type ingredientReq struct {
+		ItemId string
+		Qty    int
+	}
+	var complexIngredients []ingredientReq
+
+	for _, ingRelId := range ingredientRelationIds {
+		ingRec, err := l.app.FindRecordById("recipes_ingredients", ingRelId)
+		if err != nil {
+			continue // Skip invalid relations
+		}
+		itemId := ingRec.GetString("item")
+		qty := ingRec.GetInt("quantity")
+		totalQty := qty * quantity
+
+		if !l.HasEnoughItems(companyId, itemId, totalQty) {
+			item, _ := l.app.FindRecordById("items", itemId)
+			itemName := "Unknown Item"
+			if item != nil {
+				itemName = item.GetString("name")
+			}
+			return 0, fmt.Errorf("quantité insuffisante de %s. Requis: %d", itemName, totalQty)
+		}
+		complexIngredients = append(complexIngredients, ingredientReq{ItemId: itemId, Qty: totalQty})
+	}
+
 	// 3. Consume Items
+	// A. Consume 'inputs_items'
 	for _, itemId := range inputIds {
 		if err := l.UpdateInventory(companyId, itemId, -totalRequiredPerItem); err != nil {
 			return 0, err
 		}
 	}
 
+	// B. Consume 'ingredients'
+	for _, req := range complexIngredients {
+		if err := l.UpdateInventory(companyId, req.ItemId, -req.Qty); err != nil {
+			return 0, err
+		}
+	}
+
 	// 4.  XP
-	xpGained := float64(len(inputIds) * 10 * quantity)
+	xpGained := float64((len(inputIds) + len(complexIngredients)) * 10 * quantity)
 
 	if err := l.app.Save(company); err != nil {
 		return 0, err
