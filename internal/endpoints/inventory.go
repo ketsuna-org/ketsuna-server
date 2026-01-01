@@ -176,7 +176,7 @@ func registerInventoryEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, 
 		}
 
 		// Get all technologies unlocked by this company
-		companyTechs, _ := app.FindRecordsByFilter("company_techs", fmt.Sprintf("company = '%s'", companyId), "", 0, 0)
+		companyTechs, _ := app.FindRecordsByFilter("company_techs", fmt.Sprintf("company = '%s'", companyId), "", 1000, 0)
 
 		// Build set of unlocked tech IDs
 		unlockedTechIds := make(map[string]bool)
@@ -188,7 +188,7 @@ func registerInventoryEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, 
 		}
 
 		// Get all items and filter by required_tech
-		allItems, _ := app.FindRecordsByFilter("items", "", "", 0, 0)
+		allItems, _ := app.FindRecordsByFilter("items", "", "", 1000, 0)
 
 		var unlockedItemIds []string
 		var lockedItemIds []string
