@@ -404,14 +404,36 @@ func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
 		// Check if this machine needs energy
 		needEnergy := machineItem.GetFloat("need_energy")
 
-		// Calculate effective production time based on energy ratio
-		energyMultiplier := 1.0
+		// Apply Energy Penalty (Time Shift)
+		// Instead of increasing required time, we shift started_at forward to simulate slowdown.
+		// This allows the frontend to visualize the slowdown accurately.
 		if needEnergy > 0 && energyStatus.ProductionSpeed < 1.0 {
 			if energyStatus.ProductionSpeed <= 0 {
 				// No energy, no production
 				continue
 			}
-			energyMultiplier = 1.0 / energyStatus.ProductionSpeed
+
+			startedAt := assignment.GetDateTime("production_started_at")
+			if !startedAt.IsZero() {
+				lastUpdate := assignment.GetDateTime("updated").Time()
+				if !lastUpdate.IsZero() {
+					delta := time.Since(lastUpdate).Seconds()
+					// Sanity check: if delta is huge (server restart), cap it or ignore?
+					// Let's assume cron runs regularly.
+					if delta > 0 && delta < 3600 {
+						penalty := delta * (1.0 - energyStatus.ProductionSpeed)
+						newStart := startedAt.Time().Add(time.Duration(penalty * float64(time.Second)))
+						assignment.Set("production_started_at", newStart)
+						// We must save this intermediate state if we don't complete production in this tick
+						// But if we complete, we overwrite it. Ideally we save at the end of loop if modified.
+						// For now, let's set a flag or just save if we don't complete.
+						// Actually, we can just update the variable in memory and let the saving happen if we don't complete?
+						// Current code only saves on completion/start.
+						// We need to force save if we shifted time but didn't finish.
+						l.app.Save(assignment)
+					}
+				}
+			}
 		}
 
 		if recipeId != "" {
@@ -431,8 +453,8 @@ func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
 			}
 			baseProductionTime := recipe.GetInt("production_time")
 
-			// Apply energy penalty
-			effectiveProductionTime := float64(baseProductionTime) * energyMultiplier
+			// Use base time, penalty is applied to started_at
+			effectiveProductionTime := float64(baseProductionTime)
 
 			if baseProductionTime > 0 {
 				// Timed production (Any duration > 0)
@@ -468,8 +490,8 @@ func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
 			// --- PASSIVE PRODUCTION ---
 			baseProductionTime := machineItem.GetInt("production_time")
 
-			// Apply energy penalty
-			effectiveProductionTime := float64(baseProductionTime) * energyMultiplier
+			// Use base time, penalty is applied to started_at
+			effectiveProductionTime := float64(baseProductionTime)
 
 			if baseProductionTime > 0 {
 				// Timed Passive Production
