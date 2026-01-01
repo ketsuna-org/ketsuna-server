@@ -150,4 +150,80 @@ func registerMachineEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent) {
 			})
 		})
 	})
+
+	// GET /api/machines/stats - Get accurate machine stats (total counts across ALL machines)
+	e.Router.GET("/api/machines/stats", func(c *core.RequestEvent) error {
+		authRecord := c.Auth
+		if authRecord == nil {
+			return apis.NewUnauthorizedError("Non connecté", nil)
+		}
+
+		companyId := authRecord.GetString("active_company")
+		if companyId == "" {
+			return apis.NewBadRequestError("Aucune entreprise active", nil)
+		}
+
+		// Get ALL machines for the company (no pagination)
+		machines, err := app.FindRecordsByFilter("machines", fmt.Sprintf("company = '%s'", companyId), "", 0, 0)
+		if err != nil {
+			return apis.NewBadRequestError("Erreur récupération machines", err)
+		}
+
+		// Get ALL employees for the company
+		employees, err := app.FindRecordsByFilter("employees", fmt.Sprintf("employer = '%s'", companyId), "", 0, 0)
+		if err != nil {
+			return apis.NewBadRequestError("Erreur récupération employés", err)
+		}
+
+		// Calculate stats
+		totalMachines := len(machines)
+		totalMaxEmployees := 0
+		currentAssigned := 0
+		busySet := make(map[string]bool)
+
+		for _, m := range machines {
+			// Get max_employee from machine item
+			machineItemId := m.GetString("machine")
+			maxEmp := 1
+			if machineItemId != "" {
+				machineItem, err := app.FindRecordById("items", machineItemId)
+				if err == nil {
+					maxEmp = machineItem.GetInt("max_employee")
+					if maxEmp <= 0 {
+						maxEmp = 1
+					}
+				}
+			}
+			totalMaxEmployees += maxEmp
+
+			// Count assigned employees
+			empIds := m.GetStringSlice("employees")
+			currentAssigned += len(empIds)
+			for _, id := range empIds {
+				busySet[id] = true
+			}
+		}
+
+		// Count available employees (not assigned to any machine)
+		availableEmployees := 0
+		for _, emp := range employees {
+			if !busySet[emp.Id] {
+				availableEmployees++
+			}
+		}
+
+		missingEmployees := totalMaxEmployees - currentAssigned
+		if missingEmployees < 0 {
+			missingEmployees = 0
+		}
+
+		return c.JSON(200, map[string]interface{}{
+			"totalMachines":      totalMachines,
+			"totalMaxEmployees":  totalMaxEmployees,
+			"currentAssigned":    currentAssigned,
+			"missingEmployees":   missingEmployees,
+			"availableEmployees": availableEmployees,
+			"totalEmployees":     len(employees),
+		})
+	})
 }
