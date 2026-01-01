@@ -81,8 +81,26 @@ func registerExplorationEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent
 			record.Set("target_resource", data.TargetResourceId)
 			record.Set("status", "En cours") // Enum: "En cours", "Succès", "Echec"
 
-			// Duration: 15 minutes for testing, maybe 4 hours for real game
-			duration := 15 * time.Minute
+			// Calculate Duration based on Tech Level
+			// Formula: Level * 5 minutes. Default Level 1.
+			baseDurationPerLevel := 5 * time.Minute
+			level := 1
+
+			// Find technology that unlocks this item (Inverse relation lookup)
+			// We look for a technology where 'item_unlocked' contains the target item ID
+			tech, err := txApp.FindFirstRecordByFilter(
+				"technologies",
+				fmt.Sprintf("item_unlocked ~ '%s'", data.TargetResourceId),
+			)
+
+			if err == nil && tech != nil {
+				reqLevel := tech.GetInt("required_level")
+				if reqLevel > 1 {
+					level = reqLevel
+				}
+			}
+
+			duration := time.Duration(level) * baseDurationPerLevel
 			record.Set("end_time", time.Now().Add(duration))
 
 			if err := txApp.Save(record); err != nil {
