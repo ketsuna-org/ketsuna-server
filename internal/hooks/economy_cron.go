@@ -25,7 +25,7 @@ func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
 		"machines",
 		fmt.Sprintf("company = '%s'", companyId),
 		"",
-		0,
+		1000,
 		0,
 	)
 	if err != nil {
@@ -36,12 +36,17 @@ func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
 		return nil
 	}
 
+	// Expand 'machine' item relation for performance
+	for _, m := range assignedMachines {
+		l.app.ExpandRecord(m, []string{"machine"}, nil)
+	}
+
 	// Pre-fetch employees for efficiency calculation
 	employees, err := l.app.FindRecordsByFilter(
 		"employees",
 		fmt.Sprintf("employer = '%s'", companyId),
 		"",
-		0,
+		1000,
 		0,
 	)
 	if err != nil {
@@ -51,43 +56,56 @@ func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
 	// Track energy updates for storage machines
 	energySurplus := energyStatus.EnergyProduced - energyStatus.EnergyDemand
 
+	// We'll do two passes for energy storage:
+	// 1. Machines of type "Machine" (Internal buffers)
+	// 2. Machines of type "Stockage" (Dedicated batteries)
+
+	distributeEnergy := func(targetType string) {
+		if energySurplus == 0 {
+			return
+		}
+		for _, assignment := range assignedMachines {
+			machineItem := assignment.ExpandedOne("machine")
+			if machineItem == nil {
+				continue
+			}
+
+			if machineItem.GetString("type") != targetType {
+				continue
+			}
+
+			canStoreEnergy := machineItem.GetFloat("can_store_energy")
+			if canStoreEnergy > 0 {
+				currentStored := assignment.GetFloat("stored_energy")
+				newStored := currentStored + energySurplus
+
+				// Clamp to [0, max]
+				if newStored < 0 {
+					newStored = 0
+				}
+				if newStored > canStoreEnergy {
+					newStored = canStoreEnergy
+				}
+
+				if newStored != currentStored {
+					assignment.Set("stored_energy", newStored)
+					l.app.Save(assignment)
+					energySurplus -= (newStored - currentStored)
+				}
+			}
+			if energySurplus == 0 {
+				break
+			}
+		}
+	}
+
+	distributeEnergy("Machine")
+	distributeEnergy("Stockage")
+
+	// Now process machine logic (Production, etc.)
 	for _, assignment := range assignedMachines {
-		machineItemId := assignment.GetString("machine")
-		if machineItemId == "" {
-			continue
-		}
-
-		machineItem, err := l.app.FindRecordById("items", machineItemId)
-		if err != nil {
-			continue
-		}
-
-		// Handle energy storage: store surplus or drain for deficit
-		canStoreEnergy := machineItem.GetFloat("can_store_energy")
-		if canStoreEnergy > 0 && energySurplus != 0 {
-			currentStored := assignment.GetFloat("stored_energy")
-			newStored := currentStored + energySurplus
-
-			// Clamp to [0, max]
-			if newStored < 0 {
-				newStored = 0
-			}
-			if newStored > canStoreEnergy {
-				newStored = canStoreEnergy
-			}
-
-			if newStored != currentStored {
-				assignment.Set("stored_energy", newStored)
-				l.app.Save(assignment)
-			}
-			// Reset surplus after first storage machine handles it
-			energySurplus = 0
-		}
-
-		// Handle production logic (Energy, Recipe, Passive/Deposit)
 		err = l.ProcessMachine(companyId, assignment, energyStatus, employees)
 		if err != nil {
-			// Log but don't stop the loop for other machines
 			// l.app.Logger().Error("Error processing machine", "id", assignment.Id, "err", err)
 		}
 	}

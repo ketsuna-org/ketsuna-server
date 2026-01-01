@@ -57,8 +57,8 @@ func (l *EconomyLogic) CalculateCompanyFinance(companyId string) (*FinanceBreakd
 	}
 
 	// 2. Load related data
-	employees, _ := l.app.FindRecordsByFilter("employees", fmt.Sprintf("employer = '%s'", companyId), "", 0, 0)
-	assignedMachines, _ := l.app.FindRecordsByFilter("machines", fmt.Sprintf("company = '%s'", companyId), "", 0, 0)
+	employees, _ := l.app.FindRecordsByFilter("employees", fmt.Sprintf("employer = '%s'", companyId), "", 1000, 0)
+	assignedMachines, _ := l.app.FindRecordsByFilter("machines", fmt.Sprintf("company = '%s'", companyId), "", 1000, 0)
 
 	// --- CALCUL DES COÛTS FIXES (par 24h) ---
 	// A. Coût des machines (7€ par machine par 24h)
@@ -164,7 +164,7 @@ func (l *EconomyLogic) CalculateCompanyFinance(companyId string) (*FinanceBreakd
 
 	// --- CALCUL VALEUR RESERVE (Liquidation 24h) ---
 	reserveRevenue := 0.0
-	reserves, _ := l.app.FindRecordsByFilter("reserve", fmt.Sprintf("company='%s'", companyId), "", 0, 0)
+	reserves, _ := l.app.FindRecordsByFilter("reserve", fmt.Sprintf("company='%s'", companyId), "", 1000, 0)
 	for _, res := range reserves {
 		itemId := res.GetString("item")
 		qty := res.GetInt("quantity")

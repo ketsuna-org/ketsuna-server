@@ -6,21 +6,21 @@ import (
 )
 
 type EnergyStatus struct {
-	EnergyProduced  float64
-	EnergyDemand    float64
-	EnergyStored    float64
-	MaxEnergyStored float64
-	EnergyRatio     float64 // 1.0 = fully powered, <1.0 = production slowed
-	ProductionSpeed float64
-	IsSolarActive   bool
-	LastUpdated     time.Time
+	EnergyProduced  float64   `json:"energyProduced"`
+	EnergyDemand    float64   `json:"energyDemand"`
+	EnergyStored    float64   `json:"energyStored"`
+	MaxEnergyStored float64   `json:"maxEnergyStored"`
+	EnergyRatio     float64   `json:"energyRatio"`
+	ProductionSpeed float64   `json:"productionSpeed"`
+	IsSolarActive   bool      `json:"isSolarActive"`
+	LastUpdated     time.Time `json:"lastUpdated"`
 }
 
 func IsSolarProductionActive() bool {
 	now := time.Now().UTC()
 	hour := now.Hour()
-	// Solar active between 08:00 and 18:00 UTC
-	return hour >= 8 && hour < 18
+	// Solar active between 08:00 and 19:00 UTC (09:00-20:00 local roughly)
+	return hour >= 8 && hour < 19
 }
 
 // CalculateEnergyStatus computes a company's energy balance
@@ -37,7 +37,7 @@ func (l *EconomyLogic) CalculateEnergyStatus(companyId string) (EnergyStatus, er
 		"machines",
 		fmt.Sprintf("company = '%s'", companyId),
 		"",
-		0,
+		1000,
 		0,
 	)
 	if err != nil {
@@ -60,10 +60,6 @@ func (l *EconomyLogic) CalculateEnergyStatus(companyId string) (EnergyStatus, er
 	// Actually Expand "employees" (relation multiple) works.
 
 	for _, assignment := range machines {
-		if !assignment.GetBool("is_active") {
-			continue
-		}
-
 		machineItem := assignment.ExpandedOne("machine")
 		if machineItem == nil {
 			continue
