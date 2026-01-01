@@ -104,7 +104,14 @@ func (l *EconomyLogic) CalculateEnergyStatus(companyId string) (*EnergyStatus, e
 		// Check if this machine consumes energy
 		needEnergy := machineItem.GetFloat("need_energy")
 		if needEnergy > 0 {
-			status.EnergyDemand += needEnergy
+			energyType := machineItem.GetString("energy_type")
+			// Solar-powered machines (e.g., solar evaporation basins) don't consume grid electricity
+			// They only work when the sun is active and are effectively "free" energy-wise
+			if energyType != "Soleil" {
+				status.EnergyDemand += needEnergy
+			}
+			// Note: Solar machines will be blocked from production if sun is inactive
+			// (handled in ProcessCompanyEconomy)
 		}
 	}
 
@@ -404,10 +411,19 @@ func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
 		// Check if this machine needs energy
 		needEnergy := machineItem.GetFloat("need_energy")
 
-		// Apply Energy Penalty (Time Shift)
-		// Instead of increasing required time, we shift started_at forward to simulate slowdown.
-		// This allows the frontend to visualize the slowdown accurately.
-		if needEnergy > 0 && energyStatus.ProductionSpeed < 1.0 {
+		// Check for solar-powered machines (e.g., solar evaporation basins)
+		// These machines require sunlight to operate (8h-18h UTC only)
+		energyType := machineItem.GetString("energy_type")
+		if energyType == "Soleil" && needEnergy > 0 {
+			if !IsSolarProductionActive() {
+				// Sun is not active, skip this machine
+				continue
+			}
+			// Solar machines don't consume grid electricity, so skip energy penalty logic
+		} else if needEnergy > 0 && energyStatus.ProductionSpeed < 1.0 {
+			// Apply Energy Penalty (Time Shift) for non-solar machines
+			// Instead of increasing required time, we shift started_at forward to simulate slowdown.
+			// This allows the frontend to visualize the slowdown accurately.
 			if energyStatus.ProductionSpeed <= 0 {
 				// No energy, no production
 				continue

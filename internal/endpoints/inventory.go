@@ -162,4 +162,55 @@ func registerInventoryEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, 
 			})
 		})
 	})
+
+	// GET /api/market/unlocked-items - Get all item IDs unlocked by technology for this company
+	e.Router.GET("/api/market/unlocked-items", func(c *core.RequestEvent) error {
+		authRecord := c.Auth
+		if authRecord == nil {
+			return apis.NewUnauthorizedError("Non connecté", nil)
+		}
+
+		companyId := authRecord.GetString("active_company")
+		if companyId == "" {
+			return apis.NewBadRequestError("Aucune entreprise active", nil)
+		}
+
+		// Get all technologies unlocked by this company
+		companyTechs, _ := app.FindRecordsByFilter("company_techs", fmt.Sprintf("company = '%s'", companyId), "", 0, 0)
+
+		// Build set of unlocked tech IDs
+		unlockedTechIds := make(map[string]bool)
+		for _, ct := range companyTechs {
+			techId := ct.GetString("technology")
+			if techId != "" {
+				unlockedTechIds[techId] = true
+			}
+		}
+
+		// Get all items and filter by required_tech
+		allItems, _ := app.FindRecordsByFilter("items", "", "", 0, 0)
+
+		var unlockedItemIds []string
+		var lockedItemIds []string
+
+		for _, item := range allItems {
+			requiredTechId := item.GetString("required_tech")
+
+			// If no required tech, item is always unlocked
+			if requiredTechId == "" {
+				unlockedItemIds = append(unlockedItemIds, item.Id)
+			} else if unlockedTechIds[requiredTechId] {
+				// Tech is unlocked
+				unlockedItemIds = append(unlockedItemIds, item.Id)
+			} else {
+				// Tech is NOT unlocked
+				lockedItemIds = append(lockedItemIds, item.Id)
+			}
+		}
+
+		return c.JSON(200, map[string]interface{}{
+			"unlockedItemIds": unlockedItemIds,
+			"lockedItemIds":   lockedItemIds,
+		})
+	})
 }
