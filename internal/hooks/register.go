@@ -10,12 +10,20 @@ import (
 // package-local RNG (preferred over global rand.Seed as of Go 1.20)
 // var rng = rand.New(rand.NewSource(time.Now().UnixNano()))
 
-// RegisterHooks registers a subset of game hooks (companies, employees, inventory, recipes)
-// and starts a simple economy ticker (cron-like) to simulate the JS hooks behavior.
-func RegisterHooks(app *pocketbase.PocketBase) {
+// GetLogicHandlers returns the logic handlers for use by the endpoints package
+func GetLogicHandlers(app *pocketbase.PocketBase) (*InventoryLogic, *EconomyLogic, *EmployeeLogic) {
 	invLogic := NewInventoryLogic(app)
 	ecoLogic := NewEconomyLogic(app, invLogic)
 	empLogic := NewEmployeeLogic(app)
+	return invLogic, ecoLogic, empLogic
+}
+
+// RegisterHooks registers a subset of game hooks (companies, employees, inventory, recipes)
+// and starts a simple economy ticker (cron-like) to simulate the JS hooks behavior.
+// NOTE: Endpoints are now registered separately via endpoints.RegisterAll()
+func RegisterHooks(app *pocketbase.PocketBase) {
+	invLogic := NewInventoryLogic(app)
+	ecoLogic := NewEconomyLogic(app, invLogic)
 
 	registerCompanyHooks(app)
 	registerEmployeeHooks(app)
@@ -25,9 +33,6 @@ func RegisterHooks(app *pocketbase.PocketBase) {
 	registerInventoryHooks(app)
 	registerRecipeHooks(app)
 	registerMachineHooks(app, invLogic)
-
-	// Register API Endpoints
-	RegisterEndpoints(app, invLogic, ecoLogic, empLogic)
 
 	// Run data correction on startup (fix past bugs)
 	app.OnServe().BindFunc(func(e *core.ServeEvent) error {

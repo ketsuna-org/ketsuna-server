@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 
+	"ketsuna.com/server/internal/endpoints"
 	"ketsuna.com/server/internal/hooks"
 
 	"github.com/pocketbase/pocketbase"
@@ -12,7 +13,7 @@ import (
 )
 
 func main() {
- 
+
 	app := pocketbase.New()
 
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
@@ -22,8 +23,14 @@ func main() {
 		return se.Next()
 	})
 
-	// register our Go hooks (companies, employees, inventory, recipes, cron)
+	// Get the logic handlers from hooks
+	inv, eco, emp := hooks.GetLogicHandlers(app)
+
+	// Register PocketBase hooks (companies, employees, inventory, recipes, cron)
 	hooks.RegisterHooks(app)
+
+	// Register custom API endpoints (separated for better organization)
+	endpoints.RegisterAll(app, inv, eco, emp)
 
 	if err := app.Start(); err != nil {
 		log.Fatal(err)
