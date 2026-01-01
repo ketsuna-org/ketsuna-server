@@ -100,6 +100,19 @@ func registerInventoryEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, 
 				return apis.NewBadRequestError("Les ressources brutes ne peuvent pas être achetées. Récoltez-les manuellement !", nil)
 			}
 
+			// Check technology requirement
+			requiredTechId := item.GetString("required_tech")
+			if requiredTechId != "" {
+				// Check if company has this technology
+				_, err := txApp.FindFirstRecordByFilter(
+					"company_techs",
+					fmt.Sprintf("company='%s' && technology='%s'", companyId, requiredTechId),
+				)
+				if err != nil {
+					return apis.NewBadRequestError("Technologie requise non débloquée ! Vous ne pouvez pas acheter cet item.", nil)
+				}
+			}
+
 			// Check circulating_supply availability
 			circulatingSupply := item.GetInt("circulating_supply")
 			if circulatingSupply <= 0 {
