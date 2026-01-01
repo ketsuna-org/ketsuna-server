@@ -98,7 +98,7 @@ func registerMachineHooks(app *pocketbase.PocketBase, inv *InventoryLogic) {
 		machineItemId := record.GetString("machine")
 
 		if companyId != "" && machineItemId != "" {
-			if err := inv.UpdateInventory(companyId, machineItemId, 1); err != nil {
+			if err := inv.UpdateInventory(app, companyId, machineItemId, 1); err != nil {
 				app.Logger().Error("[MACHINES] Erreur remise en stock", "error", err)
 			} else {
 				app.Logger().Info("[MACHINES] Assignation supprimée. Machine renvoyée au stock", "machineId", machineItemId)
