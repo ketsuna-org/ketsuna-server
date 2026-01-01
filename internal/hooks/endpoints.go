@@ -257,6 +257,26 @@ func RegisterEndpoints(app *pocketbase.PocketBase, inv *InventoryLogic, eco *Eco
 			return c.JSON(200, breakdown)
 		})
 
+		// COMPANY ENERGY STATUS
+		e.Router.GET("/api/company/energy-status", func(c *core.RequestEvent) error {
+			authRecord := c.Auth
+			if authRecord == nil {
+				return apis.NewUnauthorizedError("Vous devez être connecté.", nil)
+			}
+
+			companyId := authRecord.GetString("active_company")
+			if companyId == "" {
+				return apis.NewBadRequestError("Aucune entreprise active", nil)
+			}
+
+			status, err := eco.CalculateEnergyStatus(companyId)
+			if err != nil {
+				return apis.NewBadRequestError(err.Error(), nil)
+			}
+
+			return c.JSON(200, status)
+		})
+
 		// COMPANY LEVELUP
 		e.Router.POST("/api/company/levelup", func(c *core.RequestEvent) error {
 			authRecord := c.Auth

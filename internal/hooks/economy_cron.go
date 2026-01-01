@@ -10,11 +10,29 @@ import (
 	"github.com/pocketbase/pocketbase/tools/types"
 )
 
-// ProcessCompanyEconomy handles machine production for a single company
-func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
-	_, err := l.app.FindRecordById("companies", companyId)
-	if err != nil {
-		return err
+// EnergyStatus represents the energy state of a company
+type EnergyStatus struct {
+	EnergyProduced  float64 `json:"energyProduced"`
+	EnergyDemand    float64 `json:"energyDemand"`
+	EnergyStored    float64 `json:"energyStored"`
+	MaxEnergyStored float64 `json:"maxEnergyStored"`
+	EnergyRatio     float64 `json:"energyRatio"`
+	IsSolarActive   bool    `json:"isSolarActive"`
+	ProductionSpeed float64 `json:"productionSpeed"` // 0.0 to 1.0
+}
+
+// IsSolarProductionActive checks if current UTC hour is between 8h and 18h
+func IsSolarProductionActive() bool {
+	hour := time.Now().UTC().Hour()
+	return hour >= 8 && hour < 18
+}
+
+// CalculateEnergyStatus computes energy production, consumption, and ratio for a company
+func (l *EconomyLogic) CalculateEnergyStatus(companyId string) (*EnergyStatus, error) {
+	status := &EnergyStatus{
+		EnergyRatio:     1.0,
+		ProductionSpeed: 1.0,
+		IsSolarActive:   IsSolarProductionActive(),
 	}
 
 	// Fetch assigned machines
@@ -25,16 +43,122 @@ func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
 		0,
 		0,
 	)
+	if err != nil || len(assignedMachines) == 0 {
+		return status, nil
+	}
+
+	// Fetch employees for efficiency calculation
+	employees, _ := l.app.FindRecordsByFilter(
+		"employees",
+		fmt.Sprintf("employer = '%s'", companyId),
+		"",
+		0,
+		0,
+	)
+
+	for _, assignment := range assignedMachines {
+		machineItemId := assignment.GetString("machine")
+		if machineItemId == "" {
+			continue
+		}
+
+		machineItem, err := l.app.FindRecordById("items", machineItemId)
+		if err != nil {
+			continue
+		}
+
+		// Calculate efficiency from assigned employees
+		assignedEmpIds := assignment.GetStringSlice("employees")
+		totalEfficiency := 0.0
+		for _, empId := range assignedEmpIds {
+			for _, emp := range employees {
+				if emp.Id == empId {
+					totalEfficiency += emp.GetFloat("efficiency")
+				}
+			}
+		}
+		if totalEfficiency <= 0 {
+			totalEfficiency = 1.0 // Default for machines without employees
+		}
+
+		// Check if this machine produces energy
+		produceEnergy := machineItem.GetFloat("produce_energy")
+		if produceEnergy > 0 {
+			energyType := machineItem.GetString("energy_type")
+
+			// Solar only produces during 8h-18h UTC
+			if energyType == "Soleil" && !status.IsSolarActive {
+				// Solar panel inactive, no production
+			} else {
+				status.EnergyProduced += produceEnergy * totalEfficiency
+			}
+		}
+
+		// Check if this machine stores energy
+		canStoreEnergy := machineItem.GetFloat("can_store_energy")
+		if canStoreEnergy > 0 {
+			status.MaxEnergyStored += canStoreEnergy
+			status.EnergyStored += assignment.GetFloat("stored_energy")
+		}
+
+		// Check if this machine consumes energy
+		needEnergy := machineItem.GetFloat("need_energy")
+		if needEnergy > 0 {
+			status.EnergyDemand += needEnergy
+		}
+	}
+
+	// Cap stored energy at max
+	if status.EnergyStored > status.MaxEnergyStored {
+		status.EnergyStored = status.MaxEnergyStored
+	}
+
+	// Calculate energy ratio
+	if status.EnergyDemand > 0 {
+		// Available energy = production + stored buffer
+		availableEnergy := status.EnergyProduced + status.EnergyStored
+		status.EnergyRatio = availableEnergy / status.EnergyDemand
+
+		if status.EnergyRatio > 1.0 {
+			status.EnergyRatio = 1.0
+		}
+		if status.EnergyRatio < 0.0 {
+			status.EnergyRatio = 0.0
+		}
+
+		status.ProductionSpeed = status.EnergyRatio
+	}
+
+	return status, nil
+}
+
+// ProcessCompanyEconomy handles machine production for a single company
+func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
+	_, err := l.app.FindRecordById("companies", companyId)
 	if err != nil {
-		return err // Or just return nil to skip if no machines? JS didn't fail hard.
+		return err
+	}
+
+	// Calculate energy status for this company
+	energyStatus, _ := l.CalculateEnergyStatus(companyId)
+
+	// Fetch assigned machines
+	assignedMachines, err := l.app.FindRecordsByFilter(
+		"machines",
+		fmt.Sprintf("company = '%s'", companyId),
+		"",
+		0,
+		0,
+	)
+	if err != nil {
+		return err
 	}
 
 	if len(assignedMachines) == 0 {
 		return nil
 	}
 
-	// Pre-fetch employees for efficiency calculation to avoid N+1 queries ideally,
-	// but for now we follow the logic pattern. JS code fetched all employees of company once.
+	// Pre-fetch employees for efficiency calculation
 	employees, err := l.app.FindRecordsByFilter(
 		"employees",
 		fmt.Sprintf("employer = '%s'", companyId),
@@ -46,6 +170,9 @@ func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
 		return err
 	}
 
+	// Track energy updates for storage machines
+	energySurplus := energyStatus.EnergyProduced - energyStatus.EnergyDemand
+
 	for _, assignment := range assignedMachines {
 		machineItemId := assignment.GetString("machine")
 		if machineItemId == "" {
@@ -55,6 +182,34 @@ func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
 		machineItem, err := l.app.FindRecordById("items", machineItemId)
 		if err != nil {
 			continue
+		}
+
+		// Handle energy storage: store surplus or drain for deficit
+		canStoreEnergy := machineItem.GetFloat("can_store_energy")
+		if canStoreEnergy > 0 && energySurplus != 0 {
+			currentStored := assignment.GetFloat("stored_energy")
+			newStored := currentStored + energySurplus
+
+			// Clamp to [0, max]
+			if newStored < 0 {
+				newStored = 0
+			}
+			if newStored > canStoreEnergy {
+				newStored = canStoreEnergy
+			}
+
+			if newStored != currentStored {
+				assignment.Set("stored_energy", newStored)
+				l.app.Save(assignment)
+			}
+			// Reset surplus after first storage machine handles it
+			energySurplus = 0
+		}
+
+		// Skip energy producers (they don't produce items)
+		produceEnergy := machineItem.GetFloat("produce_energy")
+		if produceEnergy > 0 {
+			continue // Energy producers don't produce physical items
 		}
 
 		// Calculate Efficiency
@@ -92,6 +247,19 @@ func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
 		recipeId := machineItem.GetString("use_recipe")
 		productId := machineItem.GetString("product")
 
+		// Check if this machine needs energy
+		needEnergy := machineItem.GetFloat("need_energy")
+
+		// Calculate effective production time based on energy ratio
+		energyMultiplier := 1.0
+		if needEnergy > 0 && energyStatus.ProductionSpeed < 1.0 {
+			if energyStatus.ProductionSpeed <= 0 {
+				// No energy, no production
+				continue
+			}
+			energyMultiplier = 1.0 / energyStatus.ProductionSpeed
+		}
+
 		if recipeId != "" {
 			// --- RECIPE PRODUCTION ---
 			// Check technology requirement first
@@ -107,9 +275,12 @@ func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
 			if err != nil {
 				continue
 			}
-			productionTime := recipe.GetInt("production_time")
+			baseProductionTime := recipe.GetInt("production_time")
 
-			if productionTime > 0 {
+			// Apply energy penalty
+			effectiveProductionTime := float64(baseProductionTime) * energyMultiplier
+
+			if baseProductionTime > 0 {
 				// Timed production (Any duration > 0)
 				startedAt := assignment.GetDateTime("production_started_at")
 
@@ -121,9 +292,9 @@ func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
 						l.app.Save(assignment)
 					}
 				} else {
-					// Check if finished
+					// Check if finished (using effective time)
 					elapsed := time.Since(startedAt.Time()).Seconds()
-					if elapsed >= float64(productionTime) {
+					if elapsed >= effectiveProductionTime {
 						err := l.inventory.CompleteProduction(companyId, recipeId, finalQty)
 						if err == nil {
 							// Reset
@@ -141,10 +312,13 @@ func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
 
 		} else if productId != "" {
 			// --- PASSIVE PRODUCTION ---
-			productionTime := machineItem.GetInt("production_time")
+			baseProductionTime := machineItem.GetInt("production_time")
 
-			if productionTime > 0 {
-				// Timed Passive Production (Even for short times, as requested)
+			// Apply energy penalty
+			effectiveProductionTime := float64(baseProductionTime) * energyMultiplier
+
+			if baseProductionTime > 0 {
+				// Timed Passive Production
 				startedAt := assignment.GetDateTime("production_started_at")
 
 				if startedAt.IsZero() {
@@ -152,9 +326,9 @@ func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
 					assignment.Set("production_started_at", types.NowDateTime())
 					l.app.Save(assignment)
 				} else {
-					// Check if finished
+					// Check if finished (using effective time)
 					elapsed := time.Since(startedAt.Time()).Seconds()
-					if elapsed >= float64(productionTime) {
+					if elapsed >= effectiveProductionTime {
 						// Complete Production
 						err := l.inventory.UpdateInventory(companyId, productId, finalQty)
 						if err == nil {
