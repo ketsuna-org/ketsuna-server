@@ -151,6 +151,20 @@ func RegisterEndpoints(app *pocketbase.PocketBase, inv *InventoryLogic, eco *Eco
 				return apis.NewBadRequestError("Item introuvable", nil)
 			}
 
+			// Block purchase of minable items
+			if item.GetBool("minable") {
+				return apis.NewBadRequestError("Les ressources brutes ne peuvent pas être achetées. Récoltez-les manuellement !", nil)
+			}
+
+			// Check circulating_supply availability
+			circulatingSupply := item.GetInt("circulating_supply")
+			if circulatingSupply <= 0 {
+				return apis.NewBadRequestError("Rupture de stock ! Nexa-Bank n'a plus cet item disponible aujourd'hui.", nil)
+			}
+			if circulatingSupply < data.Quantity {
+				return apis.NewBadRequestError(fmt.Sprintf("Stock insuffisant. Disponible: %d, Demandé: %d", circulatingSupply, data.Quantity), nil)
+			}
+
 			itemPrice := item.GetInt("base_price")
 			totalCost := itemPrice * data.Quantity
 			current := company.GetInt("balance")
@@ -200,11 +214,16 @@ func RegisterEndpoints(app *pocketbase.PocketBase, inv *InventoryLogic, eco *Eco
 
 			app.Logger().Info("[PURCHASE] Company purchased item", "companyId", companyId, "itemId", data.ItemId, "qty", data.Quantity, "totalCost", totalCost)
 
+			// Decrement circulating_supply (Nexa-Bank stock consumed)
+			item.Set("circulating_supply", circulatingSupply-data.Quantity)
+			app.Save(item)
+
 			return c.JSON(200, map[string]interface{}{
-				"success": true,
-				"message": "Achat réussi",
-				"record":  existing,
-				"cost":    totalCost,
+				"success":        true,
+				"message":        "Achat réussi",
+				"record":         existing,
+				"cost":           totalCost,
+				"remainingStock": circulatingSupply - data.Quantity,
 			})
 		})
 
