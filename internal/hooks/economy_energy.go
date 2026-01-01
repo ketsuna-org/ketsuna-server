@@ -105,7 +105,29 @@ func (l *EconomyLogic) CalculateEnergyStatus(companyId string) (EnergyStatus, er
 			energyType := machineItem.GetString("energy_type")
 			// Solar-powered machines don't consume grid electricity
 			if energyType != "Soleil" {
-				status.EnergyDemand += needEnergy
+				// Calculate Cycle Duration to normalize Power (Energy/Time)
+				cycleDuration := 1.0 // Default 1 second (Energy is per second)
+				
+				// 1. Check Recipe
+				recipeId := machineItem.GetString("use_recipe")
+				if recipeId != "" {
+					recipe, err := l.app.FindRecordById("recipes", recipeId)
+					if err == nil {
+						dur := recipe.GetFloat("production_time")
+						if dur > 1 {
+							cycleDuration = dur
+						}
+					}
+				} else {
+					// 2. Check Machine Base Production Time (Passive)
+					dur := machineItem.GetFloat("production_time")
+					if dur > 1 {
+						cycleDuration = dur
+					}
+				}
+
+				effectiveDemand := needEnergy / cycleDuration
+				status.EnergyDemand += effectiveDemand
 			}
 		}
 	}
