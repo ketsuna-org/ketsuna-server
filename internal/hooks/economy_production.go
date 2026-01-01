@@ -156,17 +156,29 @@ func (l *EconomyLogic) processPassiveProduction(companyId string, assignment *co
 	baseProductionTime := machineItem.GetInt("production_time")
 	effectiveProductionTime := float64(baseProductionTime)
 
-	// --- DEPOSIT CHECK LOGIC (New) ---
+	// --- DEPOSIT CHECK LOGIC ---
+	// Fetch product item to check if it requires a deposit (minable)
+	productRecord, err := l.app.FindRecordById("items", productId)
+	if err != nil {
+		return err
+	}
+
 	depositId := assignment.GetString("deposit")
 	var deposit *core.Record
 
-	// If machine is linked to a deposit, we verify it
+	if productRecord.GetBool("is_explorable") {
+		// Strict Check: Must have a deposit if the item comes from exploration
+		if depositId == "" {
+			return fmt.Errorf("missing deposit for explorable resource")
+		}
+	}
+
+	// If machine is linked to a deposit, we verify it (even if not strictly explorable, supports future use cases)
 	if depositId != "" {
 		var err error
 		deposit, err = l.app.FindRecordById("deposits", depositId)
 		if err != nil || deposit.GetFloat("quantity") <= 0 {
 			// Deposit empty or invalid -> Stop production
-			// TODO: Send notification if it just emptied?
 			return fmt.Errorf("deposit empty or invalid")
 		}
 
@@ -176,6 +188,9 @@ func (l *EconomyLogic) processPassiveProduction(companyId string, assignment *co
 		if richness > 0 {
 			finalQty = int(float64(finalQty) * richness)
 		}
+	} else if productRecord.GetBool("is_explorable") {
+		// Redundant check but explicit: logic shouldn't reach here if explorable and no deposit
+		return fmt.Errorf("missing deposit")
 	}
 
 	if baseProductionTime > 0 {
