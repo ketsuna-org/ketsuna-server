@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/pocketbase/pocketbase"
+	"github.com/pocketbase/pocketbase/core"
 )
 
 // package-local RNG (preferred over global rand.Seed as of Go 1.20)
@@ -27,6 +28,12 @@ func RegisterHooks(app *pocketbase.PocketBase) {
 
 	// Register API Endpoints
 	RegisterEndpoints(app, invLogic, ecoLogic, empLogic)
+
+	// Run data correction on startup (fix past bugs)
+	app.OnServe().BindFunc(func(e *core.ServeEvent) error {
+		EnforceMaxEmployees(app)
+		return e.Next()
+	})
 
 	// Start Background Jobs
 	startEconomyTicker(app, ecoLogic)

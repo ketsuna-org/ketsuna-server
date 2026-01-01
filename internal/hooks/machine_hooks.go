@@ -2,6 +2,7 @@ package hooks
 
 import (
 	"fmt"
+	"math/rand"
 
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/apis"
@@ -21,9 +22,6 @@ func registerMachineHooks(app *pocketbase.PocketBase, inv *InventoryLogic) {
 
 		// 1. Validate employees not assigned elsewhere
 		if len(employeeIds) > 0 {
-			// Find other machines with these employees
-			// filter usage: employees ~ 'id' || employees ~ 'id2'
-			// This is complex to build in simple string, loop
 			for _, empId := range employeeIds {
 				found, err := app.FindRecordsByFilter("machines", fmt.Sprintf("employees ~ '%s'", empId), "", 1, 0)
 				if err == nil && len(found) > 0 {
@@ -32,12 +30,21 @@ func registerMachineHooks(app *pocketbase.PocketBase, inv *InventoryLogic) {
 			}
 		}
 
-		// 2. Check Inventory Stock
+		// 2. Check max_employee limit
+		machineItem, err := app.FindRecordById("items", machineItemId)
+		if err == nil {
+			maxEmp := machineItem.GetInt("max_employee")
+			if maxEmp > 0 && len(employeeIds) > maxEmp {
+				return apis.NewBadRequestError(fmt.Sprintf("Cette machine ne peut accueillir que %d employé(s) maximum.", maxEmp), nil)
+			}
+		}
+
+		// 3. Check Inventory Stock
 		if !inv.HasEnoughItems(companyId, machineItemId, 1) {
 			return apis.NewBadRequestError("Vous n'avez pas cette machine en stock dans votre inventaire.", nil)
 		}
 
-		// 3. Deduct from Inventory
+		// 4. Deduct from Inventory
 		if err := inv.UpdateInventory(companyId, machineItemId, -1); err != nil {
 			return apis.NewBadRequestError(fmt.Sprintf("Erreur lors de la mise à jour de l'inventaire: %v", err), nil)
 		}
@@ -48,13 +55,23 @@ func registerMachineHooks(app *pocketbase.PocketBase, inv *InventoryLogic) {
 
 	app.OnRecordUpdateRequest("machines").BindFunc(func(e *core.RecordRequestEvent) error {
 		record := e.Record
+		machineItemId := record.GetString("machine")
 		employeeIds := record.GetStringSlice("employees")
 
+		// Check max_employee limit
+		if machineItemId != "" {
+			machineItem, err := app.FindRecordById("items", machineItemId)
+			if err == nil {
+				maxEmp := machineItem.GetInt("max_employee")
+				if maxEmp > 0 && len(employeeIds) > maxEmp {
+					return apis.NewBadRequestError(fmt.Sprintf("Cette machine ne peut accueillir que %d employé(s) maximum. Vous essayez d'en assigner %d.", maxEmp, len(employeeIds)), nil)
+				}
+			}
+		}
+
 		if len(employeeIds) > 0 {
-			// Check if any employee is already assigned to ANOTHER machine
 			e.App.Logger().Info("[MACHINES] Validating update", "machineId", record.Id, "newEmployeeList", employeeIds)
 			for _, empId := range employeeIds {
-				// We search for ANY machine containing this employee
 				found, err := app.FindRecordsByFilter("machines", fmt.Sprintf("employees ~ '%s'", empId), "", 10, 0)
 				if err == nil {
 					e.App.Logger().Info("[MACHINES] Checked employee", "empId", empId, "foundInMachines", len(found))
@@ -89,4 +106,67 @@ func registerMachineHooks(app *pocketbase.PocketBase, inv *InventoryLogic) {
 		}
 		return e.Next()
 	})
+}
+
+// EnforceMaxEmployees corrects machines that have more employees than max_employee allows
+// This is a data correction function to fix past bugs
+func EnforceMaxEmployees(app *pocketbase.PocketBase) {
+	machines, err := app.FindRecordsByFilter("machines", "", "", 0, 0)
+	if err != nil {
+		app.Logger().Error("[FIX] Failed to fetch machines", "error", err)
+		return
+	}
+
+	fixedCount := 0
+	for _, machine := range machines {
+		machineItemId := machine.GetString("machine")
+		employeeIds := machine.GetStringSlice("employees")
+
+		if machineItemId == "" || len(employeeIds) == 0 {
+			continue
+		}
+
+		machineItem, err := app.FindRecordById("items", machineItemId)
+		if err != nil {
+			continue
+		}
+
+		maxEmp := machineItem.GetInt("max_employee")
+		if maxEmp <= 0 {
+			continue // No limit defined
+		}
+
+		if len(employeeIds) > maxEmp {
+			excess := len(employeeIds) - maxEmp
+			app.Logger().Warn("[FIX] Machine has too many employees",
+				"machineId", machine.Id,
+				"machineName", machineItem.GetString("name"),
+				"current", len(employeeIds),
+				"max", maxEmp,
+				"excess", excess)
+
+			// Shuffle to randomize which employees get unassigned
+			shuffled := make([]string, len(employeeIds))
+			copy(shuffled, employeeIds)
+			rand.Shuffle(len(shuffled), func(i, j int) {
+				shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+			})
+
+			// Keep only maxEmp employees
+			machine.Set("employees", shuffled[:maxEmp])
+			if err := app.Save(machine); err != nil {
+				app.Logger().Error("[FIX] Failed to save corrected machine", "error", err)
+			} else {
+				fixedCount++
+				app.Logger().Info("[FIX] Corrected machine employee count",
+					"machineId", machine.Id,
+					"removed", excess,
+					"kept", maxEmp)
+			}
+		}
+	}
+
+	if fixedCount > 0 {
+		app.Logger().Info("[FIX] EnforceMaxEmployees completed", "machinesFixed", fixedCount)
+	}
 }
