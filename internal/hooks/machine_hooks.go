@@ -170,3 +170,98 @@ func EnforceMaxEmployees(app *pocketbase.PocketBase) {
 		app.Logger().Info("[FIX] EnforceMaxEmployees completed", "machinesFixed", fixedCount)
 	}
 }
+
+// AutoAssignDeposits tries to assign available deposits to compatible machines
+func AutoAssignDeposits(app core.App, companyId string) (int, error) {
+	// 1. Fetch Company Machines
+	machines, err := app.FindRecordsByFilter("machines", fmt.Sprintf("company = '%s'", companyId), "", 0, 0)
+	if err != nil {
+		return 0, err
+	}
+
+	// 2. Fetch Company Deposits (quantity > 0)
+	// We want deposits that are not depleted.
+	// Note: We might want to filter by richness to assign best ones first, but let's just get all > 0
+	deposits, err := app.FindRecordsByFilter("deposits", fmt.Sprintf("company = '%s' && quantity > 0", companyId), "-richness", 0, 0)
+	if err != nil {
+		return 0, err
+	}
+
+	if len(deposits) == 0 {
+		return 0, nil // No deposits to assign
+	}
+
+	assignedCount := 0
+	
+	// Track assigned deposits to avoid double assignment in this run
+	// (though usually a deposit can support multiple machines? The schema doesn't strictly say unique, 
+    // but typically mining machines match 1-1 or N-1. 
+	// The current logic in MachineAssignment.svelte implies one deposit per machine logic (machine.expand.deposit).
+	// But can a deposit be used by multiple machines? 
+	// The UI handles one deposit per machine. 
+	// Let's assume a deposit can be used by multiple machines unless specified otherwise, 
+	// BUT for "auto-assign" it's safer to not over-subscribe if we want to be "smart".
+	// However, standard games usually allow multiple miners on one node.
+	// Validating against the "Deposit" schema: there is no "assigned_machines" field.
+	// So multiple machines CAN reference the same deposit.
+    // 
+	// Strategy:
+	// iterate machines -> if machine is miner and has no deposit -> find best compatible deposit -> assign.
+	
+	// Pre-load items to check if they are explorable/minable
+	// To avoid N+1 queries, we could fetch all items involved, but for now loop is acceptable for typical counts.
+
+	for _, m := range machines {
+		// Skip if already has a deposit assigned
+		if m.GetString("deposit") != "" {
+			continue
+		}
+
+		machineItemId := m.GetString("machine")
+		machineItem, err := app.FindRecordById("items", machineItemId)
+		if err != nil {
+			continue
+		}
+		
+		// Check if machine output is "is_explorable" (meaning it needs a deposit)
+		// The machine item itself doesn't have "is_explorable", its PRODUCT does.
+		// Wait, the schema says:
+		// items -> product (relation)
+		// items -> is_explorable (boolean). 
+		// Usually a "Drill" produces "Iron Ore". "Iron Ore" is explorable.
+		
+		productId := machineItem.GetString("product")
+		if productId == "" {
+			continue
+		}
+		
+		productItem, err := app.FindRecordById("items", productId)
+		if err != nil {
+			continue
+		}
+		
+		if !productItem.GetBool("is_explorable") {
+			continue // Not a mining machine
+		}
+
+		// Find best deposit for this resource
+		var bestDeposit *core.Record
+		for _, d := range deposits {
+			if d.GetString("ressource") == productId {
+				bestDeposit = d
+				break // Deposits are sorted by richness desc, so the first match is the best
+			}
+		}
+
+		if bestDeposit != nil {
+			m.Set("deposit", bestDeposit.Id)
+			if err := app.Save(m); err != nil {
+				app.Logger().Error("[AUTO-ASSIGN] Failed to save machine", "id", m.Id, "error", err)
+			} else {
+				assignedCount++
+			}
+		}
+	}
+
+	return assignedCount, nil
+}

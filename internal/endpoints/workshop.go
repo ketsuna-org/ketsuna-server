@@ -61,4 +61,40 @@ func registerWorkshopEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, i
 			})
 		})
 	})
+
+	// POST /api/machines/auto-assign-deposits
+	e.Router.POST("/api/machines/auto-assign-deposits", func(c *core.RequestEvent) error {
+		authRecord := c.Auth
+		if authRecord == nil {
+			return apis.NewUnauthorizedError("Vous devez être connecté.", nil)
+		}
+
+		companyId := authRecord.GetString("active_company")
+		if companyId == "" {
+			return apis.NewBadRequestError("Aucune entreprise active", nil)
+		}
+
+		// Security check: is user CEO?
+		company, err := app.FindRecordById("companies", companyId)
+		if err != nil {
+			return apis.NewBadRequestError("Entreprise introuvable", nil)
+		}
+		if company.GetString("ceo") != authRecord.Id && !authRecord.IsSuperuser() {
+			return apis.NewForbiddenError("Seul le PDG peut gérer les machines", nil)
+		}
+
+		return app.RunInTransaction(func(txApp core.App) error {
+			count, err := hooks.AutoAssignDeposits(txApp, companyId)
+			if err != nil {
+				app.Logger().Error("[WORKSHOP] Auto-assign error", "error", err)
+				return apis.NewBadRequestError("Erreur lors de l'assignation automatique", err)
+			}
+
+			return c.JSON(200, map[string]interface{}{
+				"success":       true,
+				"assignedCount": count,
+				"message":       "Assignation terminée",
+			})
+		})
+	})
 }
