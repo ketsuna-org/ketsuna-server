@@ -192,22 +192,22 @@ func AutoAssignDeposits(app core.App, companyId string) (int, error) {
 	}
 
 	assignedCount := 0
-	
+
 	// Track assigned deposits to avoid double assignment in this run
-	// (though usually a deposit can support multiple machines? The schema doesn't strictly say unique, 
-    // but typically mining machines match 1-1 or N-1. 
+	// (though usually a deposit can support multiple machines? The schema doesn't strictly say unique,
+	// but typically mining machines match 1-1 or N-1.
 	// The current logic in MachineAssignment.svelte implies one deposit per machine logic (machine.expand.deposit).
-	// But can a deposit be used by multiple machines? 
-	// The UI handles one deposit per machine. 
-	// Let's assume a deposit can be used by multiple machines unless specified otherwise, 
+	// But can a deposit be used by multiple machines?
+	// The UI handles one deposit per machine.
+	// Let's assume a deposit can be used by multiple machines unless specified otherwise,
 	// BUT for "auto-assign" it's safer to not over-subscribe if we want to be "smart".
 	// However, standard games usually allow multiple miners on one node.
 	// Validating against the "Deposit" schema: there is no "assigned_machines" field.
 	// So multiple machines CAN reference the same deposit.
-    // 
+	//
 	// Strategy:
 	// iterate machines -> if machine is miner and has no deposit -> find best compatible deposit -> assign.
-	
+
 	// Pre-load items to check if they are explorable/minable
 	// To avoid N+1 queries, we could fetch all items involved, but for now loop is acceptable for typical counts.
 
@@ -222,24 +222,24 @@ func AutoAssignDeposits(app core.App, companyId string) (int, error) {
 		if err != nil {
 			continue
 		}
-		
+
 		// Check if machine output is "is_explorable" (meaning it needs a deposit)
 		// The machine item itself doesn't have "is_explorable", its PRODUCT does.
 		// Wait, the schema says:
 		// items -> product (relation)
-		// items -> is_explorable (boolean). 
+		// items -> is_explorable (boolean).
 		// Usually a "Drill" produces "Iron Ore". "Iron Ore" is explorable.
-		
+
 		productId := machineItem.GetString("product")
 		if productId == "" {
 			continue
 		}
-		
+
 		productItem, err := app.FindRecordById("items", productId)
 		if err != nil {
 			continue
 		}
-		
+
 		if !productItem.GetBool("is_explorable") {
 			continue // Not a mining machine
 		}
@@ -261,6 +261,118 @@ func AutoAssignDeposits(app core.App, companyId string) (int, error) {
 				assignedCount++
 			}
 		}
+	}
+
+	return assignedCount, nil
+}
+
+// AutoAssignEmployees assigns available employees to machines efficiently
+func AutoAssignEmployees(app core.App, companyId string) (int, error) {
+	// Get all machines for the company
+	machines, err := app.FindRecordsByFilter("machines", fmt.Sprintf("company = '%s'", companyId), "", 0, 0)
+	if err != nil {
+		return 0, fmt.Errorf("erreur récupération machines: %v", err)
+	}
+
+	// Get all employees for the company (sorted by efficiency)
+	employees, err := app.FindRecordsByFilter("employees", fmt.Sprintf("employer = '%s'", companyId), "-efficiency", 0, 0)
+	if err != nil {
+		return 0, fmt.Errorf("erreur récupération employés: %v", err)
+	}
+
+	// Build set of already-busy employee IDs
+	busySet := make(map[string]bool)
+	for _, m := range machines {
+		empIds := m.GetStringSlice("employees")
+		for _, id := range empIds {
+			busySet[id] = true
+		}
+	}
+
+	// Build list of available employees
+	var availableEmpIds []string
+	for _, emp := range employees {
+		if !busySet[emp.Id] {
+			availableEmpIds = append(availableEmpIds, emp.Id)
+		}
+	}
+
+	if len(availableEmpIds) == 0 {
+		return 0, nil
+	}
+
+	// Sort machines: prioritize those with 0 employees
+	type machineSlot struct {
+		machine     *core.Record
+		maxEmp      int
+		currentEmp  int
+		slotsNeeded int
+	}
+	var machinesNeedingEmp []machineSlot
+
+	for _, m := range machines {
+		machineItemId := m.GetString("machine")
+		maxEmp := 1
+		if machineItemId != "" {
+			machineItem, err := app.FindRecordById("items", machineItemId)
+			if err == nil {
+				maxEmp = machineItem.GetInt("max_employee")
+				if maxEmp <= 0 {
+					maxEmp = 1
+				}
+			}
+		}
+
+		currentEmp := len(m.GetStringSlice("employees"))
+		slotsNeeded := maxEmp - currentEmp
+
+		if slotsNeeded > 0 {
+			machinesNeedingEmp = append(machinesNeedingEmp, machineSlot{
+				machine:     m,
+				maxEmp:      maxEmp,
+				currentEmp:  currentEmp,
+				slotsNeeded: slotsNeeded,
+			})
+		}
+	}
+
+	// Sort: empty machines first
+	for i := 0; i < len(machinesNeedingEmp)-1; i++ {
+		for j := i + 1; j < len(machinesNeedingEmp); j++ {
+			iEmpty := machinesNeedingEmp[i].currentEmp == 0
+			jEmpty := machinesNeedingEmp[j].currentEmp == 0
+			if jEmpty && !iEmpty {
+				machinesNeedingEmp[i], machinesNeedingEmp[j] = machinesNeedingEmp[j], machinesNeedingEmp[i]
+			}
+		}
+	}
+
+	// Assign employees to machines
+	assignedCount := 0
+	availableIndex := 0
+
+	for _, ms := range machinesNeedingEmp {
+		if availableIndex >= len(availableEmpIds) {
+			break
+		}
+
+		currentEmployees := ms.machine.GetStringSlice("employees")
+		toAssignCount := ms.slotsNeeded
+		if toAssignCount > len(availableEmpIds)-availableIndex {
+			toAssignCount = len(availableEmpIds) - availableIndex
+		}
+
+		newEmps := availableEmpIds[availableIndex : availableIndex+toAssignCount]
+		availableIndex += toAssignCount
+
+		updatedList := append(currentEmployees, newEmps...)
+		ms.machine.Set("employees", updatedList)
+		if err := app.Save(ms.machine); err != nil {
+			// Continue even if one fails
+			continue
+		}
+
+		assignedCount += toAssignCount
 	}
 
 	return assignedCount, nil
