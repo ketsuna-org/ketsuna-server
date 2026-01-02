@@ -71,6 +71,33 @@ func registerMachineEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent) {
 			return apis.NewBadRequestError("Erreur récupération employés", err)
 		}
 
+		// Optimize: Batch fetch all referenced items to avoid N+1 queries
+		machineItemIds := make([]string, 0, len(machines))
+		seenItems := make(map[string]bool)
+		for _, m := range machines {
+			itemId := m.GetString("machine")
+			if itemId != "" && !seenItems[itemId] {
+				machineItemIds = append(machineItemIds, itemId)
+				seenItems[itemId] = true
+			}
+		}
+
+		// Fetch all relevant items in one query (or chunks if needed, but usually fine for this game scale)
+		// Since PocketBase Go API doesn't have a simple FindRecordsByIds for arbitrary list, we use a filter
+		// Or simpler: fetch ALL items since they are static definitions essentially
+		// But let's verify if we can just fetch all items. Assuming items collection is < 1000 records.
+		// A safe approach: If we have IDs, we can build a filter "id = 'id1' || id = 'id2'..." but that's ugly.
+		// Actually, fetching all items is probably faster/safer than N+1.
+		allItems, err := app.FindRecordsByFilter("items", "", "", 0, 0)
+		if err != nil {
+			return apis.NewBadRequestError("Erreur récupération items", err)
+		}
+
+		itemMap := make(map[string]*core.Record)
+		for _, item := range allItems {
+			itemMap[item.Id] = item
+		}
+
 		// Calculate stats
 		totalMachines := len(machines)
 		totalMaxEmployees := 0
@@ -80,18 +107,16 @@ func registerMachineEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent) {
 		stockageTypeCount := 0
 
 		for _, m := range machines {
-			// Get max_employee from machine item
+			// Get max_employee from machine item (via map)
 			machineItemId := m.GetString("machine")
 			maxEmp := 1
 			var machineItem *core.Record
-			if machineItemId != "" {
-				item, err := app.FindRecordById("items", machineItemId)
-				if err == nil {
-					machineItem = item
-					maxEmp = machineItem.GetInt("max_employee")
-					if maxEmp <= 0 {
-						maxEmp = 1
-					}
+
+			if item, ok := itemMap[machineItemId]; ok {
+				machineItem = item
+				maxEmp = machineItem.GetInt("max_employee")
+				if maxEmp <= 0 {
+					maxEmp = 1
 				}
 			}
 			totalMaxEmployees += maxEmp
