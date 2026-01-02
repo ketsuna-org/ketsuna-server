@@ -76,14 +76,18 @@ func registerMachineEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent) {
 		totalMaxEmployees := 0
 		currentAssigned := 0
 		busySet := make(map[string]bool)
+		machineTypeCount := 0
+		stockageTypeCount := 0
 
 		for _, m := range machines {
 			// Get max_employee from machine item
 			machineItemId := m.GetString("machine")
 			maxEmp := 1
+			var machineItem *core.Record
 			if machineItemId != "" {
-				machineItem, err := app.FindRecordById("items", machineItemId)
+				item, err := app.FindRecordById("items", machineItemId)
 				if err == nil {
+					machineItem = item
 					maxEmp = machineItem.GetInt("max_employee")
 					if maxEmp <= 0 {
 						maxEmp = 1
@@ -97,6 +101,16 @@ func registerMachineEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent) {
 			currentAssigned += len(empIds)
 			for _, id := range empIds {
 				busySet[id] = true
+			}
+
+			// Count types
+			if machineItem != nil {
+				itemType := machineItem.GetString("type")
+				if itemType == "Machine" {
+					machineTypeCount++
+				} else if itemType == "Stockage" {
+					stockageTypeCount++
+				}
 			}
 		}
 
@@ -120,6 +134,8 @@ func registerMachineEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent) {
 			"missingEmployees":   missingEmployees,
 			"availableEmployees": availableEmployees,
 			"totalEmployees":     len(employees),
+			"machineTypeCount":   machineTypeCount,
+			"stockageTypeCount":  stockageTypeCount,
 		})
 	})
 	// POST /api/machines/assign-deposit - Link a machine to a deposit
