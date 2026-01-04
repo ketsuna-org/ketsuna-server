@@ -66,12 +66,14 @@ func registerInventoryHooks(app *pocketbase.PocketBase) {
 			// Update Market Stock
 			item.Set("market_demand", stock-qty)
 
-			// Update Price (Buy -> Price Goes UP)
-			// "I buy 5 machines, Price goes up !!"
-			// Factor: 0.5% per unit?
-			priceFactor := 0.005
-			newPrice := itemPrice * (1 + float64(qty)*priceFactor)
-			item.Set("base_price", math.Round(newPrice*100)/100)
+			// Update Price (Buy -> Price Goes UP) - ONLY FOR MACHINES
+			if item.GetString("type") == "Machine" {
+				// "I buy 5 machines, Price goes up !!"
+				// Factor: 0.5% per unit?
+				priceFactor := 0.005
+				newPrice := itemPrice * (1 + float64(qty)*priceFactor)
+				item.Set("base_price", math.Round(newPrice*100)/100)
+			}
 
 			if err := e.App.Save(item); err != nil {
 				return apis.NewBadRequestError("Erreur mise à jour marché", err)
@@ -126,10 +128,12 @@ func registerInventoryHooks(app *pocketbase.PocketBase) {
 			// Update Market Stock
 			item.Set("market_demand", stock-added)
 
-			// Update Price (Buy -> Price Goes UP)
-			priceFactor := 0.005
-			newPrice := price * (1 + float64(added)*priceFactor)
-			item.Set("base_price", math.Round(newPrice*100)/100)
+			// Update Price (Buy -> Price Goes UP) - ONLY FOR MACHINES
+			if item.GetString("type") == "Machine" {
+				priceFactor := 0.005
+				newPrice := price * (1 + float64(added)*priceFactor)
+				item.Set("base_price", math.Round(newPrice*100)/100)
+			}
 
 			if err := e.App.Save(item); err != nil {
 				return apis.NewBadRequestError("Erreur mise à jour marché", err)

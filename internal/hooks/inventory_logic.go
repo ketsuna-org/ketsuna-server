@@ -323,16 +323,20 @@ func (l *InventoryLogic) SellInventory(app core.App, companyId, itemId string, q
 	company.Set("balance", newBalance)
 
 	// --- MARKET UPDATE ON SELL ---
+	// --- MARKET UPDATE ON SELL ---
 	// Sell -> Stock UP, Price DOWN
 	stock := item.GetInt("market_demand")
 	item.Set("market_demand", stock+quantity)
 
-	priceFactor := 0.005
-	newPrice := unitBuyPrice * (1 - float64(quantity)*priceFactor)
-	if newPrice < 0.1 {
-		newPrice = 0.1
+	// Price Update logic - ONLY FOR MACHINES
+	if item.GetString("type") == "Machine" {
+		priceFactor := 0.005
+		newPrice := unitBuyPrice * (1 - float64(quantity)*priceFactor)
+		if newPrice < 0.1 {
+			newPrice = 0.1
+		}
+		item.Set("base_price", math.Round(newPrice*100)/100)
 	}
-	item.Set("base_price", math.Round(newPrice*100)/100)
 
 	if err := app.Save(item); err != nil {
 		return nil, err
