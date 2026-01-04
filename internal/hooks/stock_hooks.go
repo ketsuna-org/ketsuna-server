@@ -59,9 +59,6 @@ func registerStockHooks(app *pocketbase.PocketBase) {
 		if r.GetInt("shares_owned_by_public") == 0 {
 			r.Set("shares_owned_by_public", int(float64(total)*0.3))
 		}
-		if r.GetFloat("volatility") == 0 {
-			r.Set("volatility", 0.1)
-		}
 
 		// Price History Init
 		// Creating manual JSON for history

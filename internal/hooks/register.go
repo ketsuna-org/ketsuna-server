@@ -39,6 +39,10 @@ func RegisterHooks(app *pocketbase.PocketBase) {
 	app.OnServe().BindFunc(func(e *core.ServeEvent) error {
 		EnforceMaxEmployees(app)
 		InitializeCompaniesOnStartup(app) // Create CEO + wood deposit for companies
+
+		app.Logger().Info("[STARTUP] Running initial Market Supply Update...")
+		ecoLogic.UpdateMarketPrices()
+
 		return e.Next()
 	})
 

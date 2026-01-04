@@ -132,71 +132,32 @@ func (l *EconomyLogic) UpdateMarketPrices() {
 	for _, item := range items {
 		isMinable := item.GetBool("minable")
 
-		// 1. Calculate Circulating Supply from players
-		// Supply = Sum(Inventory) + Sum(Reserve)
+		// 1. Calculate Circulating Supply (Just for stats)
 		var invCount float64
 		var resCount float64
 		_ = l.app.DB().Select("SUM(quantity)").From("inventory").Where(dbx.HashExp{"item": item.Id}).Row(&invCount)
 		_ = l.app.DB().Select("SUM(quantity)").From("reserve").Where(dbx.HashExp{"item": item.Id}).Row(&resCount)
-
 		playerSupply := int(invCount + resCount)
+		item.Set("circulating_supply", playerSupply)
 
-		// 2. NPC Companies inject supply (for non-minable items only)
-		// Formula: playerCompanyCount × 1000 × random(0.5-1.5)
-		npcInjection := 0
+		// 2. Daily Stock Refill (Only for non-minable items e.g. Machines)
+		// User Rule: "limited to 10 Units per player... limited by day"
+		// We use 'market_demand' field to store the Available Market Stock.
 		if !isMinable {
-			randomFactor := 0.5 + rand.Float64() // 0.5 to 1.5
-			npcInjection = int(float64(playerCompanyCount) * 1000 * randomFactor)
+			baseRefill := float64(playerCompanyCount * 10)
+
+			// Add Variance: + 5% to 10%
+			// "100 machines + 5 / 10%"
+			variance := baseRefill * (0.05 + rand.Float64()*0.05) // 0.05 to 0.10
+
+			newStock := int(math.Round(baseRefill + variance))
+
+			// Set the Market Stock (using market_demand field)
+			item.Set("market_demand", newStock)
 		}
 
-		totalSupply := playerSupply + npcInjection
-		item.Set("circulating_supply", totalSupply)
-
-		// 3. Market Demand (Random Walk) - only for non-minable
-		if !isMinable {
-			currentDemand := item.GetInt("market_demand")
-			if currentDemand <= 0 {
-				currentDemand = 1000
-				if totalSupply > 0 {
-					currentDemand = totalSupply
-				}
-			}
-
-			// Change demand slightly (-10% to +10%)
-			demandChange := (rand.Float64() - 0.5) * 0.2
-			newDemand := int(float64(currentDemand) * (1 + demandChange))
-			if newDemand < 10 {
-				newDemand = 10
-			}
-			item.Set("market_demand", newDemand)
-
-			// 4. Price Calculation (Supply/Demand Ratio)
-			ratio := float64(newDemand) / float64(totalSupply+1)
-
-			basePrice := item.GetFloat("base_price")
-			volatility := item.GetFloat("volatility")
-			if volatility <= 0 {
-				volatility = 0.05
-			}
-
-			pctChange := (ratio - 1.0) * volatility
-
-			// Cap extreme changes per day
-			if pctChange > 0.2 {
-				pctChange = 0.2
-			}
-			if pctChange < -0.2 {
-				pctChange = -0.2
-			}
-
-			newPrice := basePrice * (1 + pctChange)
-			if newPrice < 0.1 {
-				newPrice = 0.1
-			}
-
-			item.Set("base_price", math.Round(newPrice*100)/100)
-		}
-		// Minable items: price stays fixed, no volatility applied
+		// 3. Remove Volatility & Random Price Changes
+		// Prices are now updated strictly on Buy/Sell actions in inventory hooks.
 
 		l.app.Save(item)
 	}
@@ -207,23 +168,7 @@ func (l *EconomyLogic) UpdateMarketPrices() {
 }
 
 func (l *EconomyLogic) UpdateStockPrices() {
-	stocks, _ := l.app.FindRecordsByFilter("stocks", "", "", 0, 0)
-	for _, stock := range stocks {
-		currentPrice := stock.GetFloat("share_price")
-		if currentPrice == 0 {
-			currentPrice = 10
-		}
-
-		change := (rand.Float64() - 0.5) * 0.1
-		newPrice := currentPrice * (1 + change)
-
-		if newPrice < 0.1 {
-			newPrice = 0.1
-		}
-
-		stock.Set("share_price", newPrice)
-		l.app.Save(stock)
-	}
+	// Volatility removed. Prices update only on transactions (if implemented) or stay static.
 }
 
 func (l *EconomyLogic) DeductDailyPayroll() {
