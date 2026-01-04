@@ -41,6 +41,7 @@ func RegisterHooks(app *pocketbase.PocketBase) {
 		InitializeCompaniesOnStartup(app) // Create CEO + wood deposit for companies
 		PurgeEmptyDeposits(app)           // Clean up empty deposits
 		FixZeroLevelDeposits(app)         // Fix deposits with level 0
+		EnforceDepositCapacity(app)       // Clean up surplus assignments
 
 		app.Logger().Info("[STARTUP] Running initial Market Supply Update...")
 		ecoLogic.UpdateMarketPrices()

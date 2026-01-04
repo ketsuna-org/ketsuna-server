@@ -118,3 +118,49 @@ func FixZeroLevelDeposits(app *pocketbase.PocketBase) {
 
 	app.Logger().Info("[CLEANUP] FixZeroLevelDeposits completed", "fixed", fixedCount)
 }
+
+// EnforceDepositCapacity cleans up surplus machines/employees from deposits that exceed capacity.
+// Capacity Rule: Size * 5. Machine = 5. Employee = 1.
+func EnforceDepositCapacity(app *pocketbase.PocketBase) {
+fo("[CLEANUP] Enforcing deposit capacities...")
+
+err := app.FindRecordsByFilter("deposits", "", "", 0, 0)
+err != nil {
+UP] Failed to fetch deposits", "error", err)
+
+
+_, dep := range deposits {
+:= dep.GetInt("size")
+size <= 0 {
+= 1
+ := size * 5
+
+Use LIFO (Last Assigned First Removed)? "created DESC" implies newest first.
+es, _ := app.FindRecordsByFilter("machines", "deposit='"+dep.Id+"'", "created DESC", 0, 0)
+ees, _ := app.FindRecordsByFilter("employees", "deposit='"+dep.Id+"'", "created DESC", 0, 0)
+
+eOccupancy := len(machines) * 5
+eeOccupancy := len(employees)
+tOccupancy := machineOccupancy + employeeOccupancy
+
+currentOccupancy > maxCapacity {
+fo("[CLEANUP] Deposit over capacity", "id", dep.Id, "capacity", maxCapacity, "used", currentOccupancy)
+
+Remove Surplus Machines First (Most impactful)
+_, m := range machines {
+currentOccupancy <= maxCapacity {
+"")
+err := app.Save(m); err == nil {
+tOccupancy -= 5
+fo("[CLEANUP] Unassigned surplus machine", "machine", m.Id)
+
+If still over, remove employees
+currentOccupancy > maxCapacity {
+_, e := range employees {
+currentOccupancy <= maxCapacity {
+"")
+err := app.Save(e); err == nil {
+tOccupancy -= 1
+fo("[CLEANUP] Unassigned surplus employee", "employee", e.Id)
+fo("[CLEANUP] EnforceDepositCapacity finished.")
+}
