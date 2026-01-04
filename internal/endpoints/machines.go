@@ -131,9 +131,10 @@ func registerMachineEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent) {
 			// Count types
 			if machineItem != nil {
 				itemType := machineItem.GetString("type")
-				if itemType == "Machine" {
+				switch itemType {
+case "Machine":
 					machineTypeCount++
-				} else if itemType == "Stockage" {
+				case "Stockage":
 					stockageTypeCount++
 				}
 			}

@@ -110,7 +110,7 @@ func (l *EconomyLogic) ProcessMachine(
 	return nil
 }
 
-func (l *EconomyLogic) processRecipeProduction(companyId string, assignment *core.Record, machineItem *core.Record, recipeId string, finalQty int) error {
+func (l *EconomyLogic) processRecipeProduction(companyId string, assignment *core.Record, _ *core.Record, recipeId string, finalQty int) error {
 	// Check technology
 	hasTech, techName := l.inventory.HasRequiredTechnology(l.app, companyId, recipeId)
 	if !hasTech {
