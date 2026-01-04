@@ -12,6 +12,11 @@ import (
 func registerInventoryHooks(app *pocketbase.PocketBase) {
 	app.OnRecordCreateRequest("inventory").BindFunc(func(e *core.RecordRequestEvent) error {
 
+		// Allow Admin/Superuser to bypass all checks and logic
+		if e.Auth != nil && e.Auth.IsSuperuser() {
+			return e.Next()
+		}
+
 		if e.Auth == nil {
 			return apis.NewBadRequestError("You need to be logged in", nil)
 		}
@@ -53,18 +58,19 @@ func registerInventoryHooks(app *pocketbase.PocketBase) {
 			}
 
 			// --- MARKET STOCK CHECK ---
+			// --- MARKET STOCK CHECK ---
 			// market_demand used as Market Stock
 			stock := item.GetInt("market_demand")
-			// Only check stock for machines/non-minables if that's the rule, or ALL items?
-			// User said "Auto-refill stock... limited to 10".
-			// If minable items (Iron) depend on players selling, then Stock applies to them too.
-			// So we check stock for everyone.
-			if stock < qty {
-				return apis.NewBadRequestError(fmt.Sprintf("Stock insuffisant sur le marché. Disponible: %d", stock), nil)
-			}
+			isMinable := item.GetBool("minable")
 
-			// Update Market Stock
-			item.Set("market_demand", stock-qty)
+			// Only apply stock limits to Non-Minable items (Machines)
+			if !isMinable {
+				if stock < qty {
+					return apis.NewBadRequestError(fmt.Sprintf("Stock insuffisant sur le marché. Disponible: %d", stock), nil)
+				}
+				// Update Market Stock
+				item.Set("market_demand", stock-qty)
+			}
 
 			// Update Price (Buy -> Price Goes UP) - ONLY FOR MACHINES
 			if item.GetString("type") == "Machine" {
@@ -102,8 +108,17 @@ func registerInventoryHooks(app *pocketbase.PocketBase) {
 			return apis.NewBadRequestError("Company introuvable", nil)
 		}
 		companyAuthId := company.GetString("ceo")
-		if e.Auth == nil || e.Auth.Id != companyAuthId {
+
+		// Allow Admin/Superuser
+		isSuperUser := e.Auth != nil && e.Auth.IsSuperuser()
+
+		if !isSuperUser && (e.Auth == nil || e.Auth.Id != companyAuthId) {
 			return apis.NewForbiddenError("Seul le CEO peut modifier l'inventaire", nil)
+		}
+
+		// Skip Purchase Logic/Cost deduction for Superusers
+		if isSuperUser {
+			return e.Next()
 		}
 
 		oldQ := orig.GetInt("quantity")
@@ -121,12 +136,15 @@ func registerInventoryHooks(app *pocketbase.PocketBase) {
 
 			// --- MARKET STOCK CHECK ---
 			stock := item.GetInt("market_demand")
-			if stock < added {
-				return apis.NewBadRequestError(fmt.Sprintf("Stock insuffisant sur le marché. Disponible: %d", stock), nil)
-			}
+			isMinable := item.GetBool("minable")
 
-			// Update Market Stock
-			item.Set("market_demand", stock-added)
+			if !isMinable {
+				if stock < added {
+					return apis.NewBadRequestError(fmt.Sprintf("Stock insuffisant sur le marché. Disponible: %d", stock), nil)
+				}
+				// Update Market Stock
+				item.Set("market_demand", stock-added)
+			}
 
 			// Update Price (Buy -> Price Goes UP) - ONLY FOR MACHINES
 			if item.GetString("type") == "Machine" {

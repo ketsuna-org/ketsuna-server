@@ -2,6 +2,7 @@ package endpoints
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/apis"
@@ -95,10 +96,10 @@ func registerInventoryEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, 
 				return apis.NewBadRequestError("Item introuvable", nil)
 			}
 
-			// Block purchase of minable items
-			if item.GetBool("minable") {
-				return apis.NewBadRequestError("Les ressources brutes ne peuvent pas être achetées. Récoltez-les manuellement !", nil)
-			}
+			// Block purchase of minable items - REMOVED (Minable items are buyable and unlimited)
+			// if item.GetBool("minable") {
+			// 	return apis.NewBadRequestError("Les ressources brutes ne peuvent pas être achetées. Récoltez-les manuellement !", nil)
+			// }
 
 			// Check technology requirement
 			requiredTechId := item.GetString("required_tech")
@@ -113,20 +114,26 @@ func registerInventoryEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, 
 				}
 			}
 
-			// Check circulating_supply availability
-			circulatingSupply := item.GetInt("circulating_supply")
-			if circulatingSupply <= 0 {
-				return apis.NewBadRequestError("Rupture de stock ! Nexa-Bank n'a plus cet item disponible aujourd'hui.", nil)
-			}
-			if circulatingSupply < data.Quantity {
-				return apis.NewBadRequestError(fmt.Sprintf("Stock insuffisant. Disponible: %d, Demandé: %d", circulatingSupply, data.Quantity), nil)
+			// Check Stock (market_demand)
+			// Minable items are UNLIMITED (no stock check)
+			marketStock := item.GetInt("market_demand")
+			isMinable := item.GetBool("minable")
+
+			if !isMinable {
+				if marketStock <= 0 {
+					return apis.NewBadRequestError("Rupture de stock ! Nexa-Bank n'a plus cet item disponible aujourd'hui.", nil)
+				}
+				if marketStock < data.Quantity {
+					return apis.NewBadRequestError(fmt.Sprintf("Stock insuffisant. Disponible: %d, Demandé: %d", marketStock, data.Quantity), nil)
+				}
+				// We update stock later
 			}
 
-			itemPrice := item.GetInt("base_price")
-			totalCost := itemPrice * data.Quantity
-			current := company.GetInt("balance")
+			itemPrice := item.GetFloat("base_price") // Changed to Float
+			totalCost := itemPrice * float64(data.Quantity)
+			current := company.GetFloat("balance") // Changed to Float
 			if current < totalCost {
-				return apis.NewBadRequestError(fmt.Sprintf("Fonds insuffisants. Coût: %d€, Solde: %d€", totalCost, current), nil)
+				return apis.NewBadRequestError(fmt.Sprintf("Fonds insuffisants. Coût: %.2f€, Solde: %.2f€", totalCost, current), nil)
 			}
 
 			// Check existing inventory
@@ -160,8 +167,18 @@ func registerInventoryEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, 
 
 			app.Logger().Info("[PURCHASE] Company purchased item", "companyId", companyId, "itemId", data.ItemId, "qty", data.Quantity, "totalCost", totalCost)
 
-			// Decrement circulating_supply
-			item.Set("circulating_supply", circulatingSupply-data.Quantity)
+			// Update Market Data (Stock & Price)
+			if !isMinable {
+				item.Set("market_demand", marketStock-data.Quantity)
+			}
+
+			// Dynamic Pricing (Only for Machines)
+			if item.GetString("type") == "Machine" {
+				priceFactor := 0.005
+				newPrice := itemPrice * (1 + float64(data.Quantity)*priceFactor)
+				item.Set("base_price", math.Round(newPrice*100)/100)
+			}
+
 			if err := txApp.Save(item); err != nil {
 				return apis.NewBadRequestError("Erreur sauvegarde item", err)
 			}
@@ -171,7 +188,7 @@ func registerInventoryEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, 
 				"message":        "Achat réussi",
 				"record":         existing,
 				"cost":           totalCost,
-				"remainingStock": circulatingSupply - data.Quantity,
+				"remainingStock": marketStock - data.Quantity,
 			})
 		})
 	})
