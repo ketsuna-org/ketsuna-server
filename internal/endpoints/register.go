@@ -15,10 +15,9 @@ func RegisterAll(app *pocketbase.PocketBase, inv *hooks.InventoryLogic, eco *hoo
 		registerInventoryEndpoints(app, e, inv)
 		registerCompanyEndpoints(app, e, eco)
 		registerEmployeesEndpoints(app, e, emp)
-		registerReserveEndpoints(app, e)
-		registerHarvestEndpoints(app, e, inv)
 		registerMachineEndpoints(app, e)
 		registerExplorationEndpoints(app, e)
+		registerDepositEndpoints(app, e) // Endpoints for assigning employees to deposits
 
 		return e.Next()
 	})

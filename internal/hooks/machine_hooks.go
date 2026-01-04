@@ -181,8 +181,8 @@ func AutoAssignDeposits(app core.App, companyId string) (int, error) {
 
 	// 2. Fetch Company Deposits (quantity > 0)
 	// We want deposits that are not depleted.
-	// Note: We might want to filter by richness to assign best ones first, but let's just get all > 0
-	deposits, err := app.FindRecordsByFilter("deposits", fmt.Sprintf("company = '%s' && quantity > 0", companyId), "-richness", 0, 0)
+	// Note: We sort by size (level) to assign best ones first
+	deposits, err := app.FindRecordsByFilter("deposits", fmt.Sprintf("company = '%s' && quantity > 0", companyId), "-size", 0, 0)
 	if err != nil {
 		return 0, err
 	}
@@ -249,7 +249,7 @@ func AutoAssignDeposits(app core.App, companyId string) (int, error) {
 		for _, d := range deposits {
 			if d.GetString("ressource") == productId {
 				bestDeposit = d
-				break // Deposits are sorted by richness desc, so the first match is the best
+				break // Deposits are sorted by size desc, so the first match is the best
 			}
 		}
 

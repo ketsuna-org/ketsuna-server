@@ -35,9 +35,10 @@ func RegisterHooks(app *pocketbase.PocketBase) {
 	registerMachineHooks(app, invLogic)
 	RegisterExplorationCron(app)
 
-	// Run data correction on startup (fix past bugs)
+	// Run data correction and initialization on startup
 	app.OnServe().BindFunc(func(e *core.ServeEvent) error {
 		EnforceMaxEmployees(app)
+		InitializeCompaniesOnStartup(app) // Create CEO + wood deposit for companies
 		return e.Next()
 	})
 
@@ -56,6 +57,7 @@ func startEconomyTicker(app *pocketbase.PocketBase, eco *EconomyLogic) {
 			if err == nil {
 				for _, c := range companies {
 					eco.ProcessCompanyEconomy(c.Id)
+					eco.ProcessDepositHarvesting(c.Id) // Process employee-based deposit harvesting
 				}
 			}
 			eco.UpdateStockPrices()
@@ -68,6 +70,5 @@ func startEconomyTicker(app *pocketbase.PocketBase, eco *EconomyLogic) {
 		app.Logger().Info("[CRON] Executing Daily Payroll & Market Update (06:00 UTC)")
 		eco.UpdateMarketPrices()
 		eco.DeductDailyPayroll()
-		eco.SellReserveItems()
 	})
 }

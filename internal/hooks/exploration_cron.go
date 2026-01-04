@@ -57,8 +57,8 @@ func processExplorationResult(app *pocketbase.PocketBase, exploration *core.Reco
 		qtyParams := rand.Float64() * 450000.0 // 0 to 450k
 		quantity := baseQty + qtyParams
 
-		// Randomize Richness (0.8 to 1.5)
-		richness := 0.8 + (rand.Float64() * 0.7)
+		// Randomize Size (Level 1 to 10)
+		size := 1 + rand.Intn(10) // Random level 1-10
 
 		// Create record
 		depositsCollection, _ := app.FindCollectionByNameOrId("deposits")
@@ -66,7 +66,7 @@ func processExplorationResult(app *pocketbase.PocketBase, exploration *core.Reco
 		deposit.Set("company", companyId)
 		deposit.Set("ressource", resourceId) // Corrected field name from schema update 'ressource'
 		deposit.Set("quantity", quantity)
-		deposit.Set("richness", richness)
+		deposit.Set("size", size)
 
 		if err := app.Save(deposit); err != nil {
 			app.Logger().Error("Failed to create deposit", "err", err)
@@ -77,7 +77,7 @@ func processExplorationResult(app *pocketbase.PocketBase, exploration *core.Reco
 		} else {
 			exploration.Set("status", "Succès")
 			// Create notification message (optional)
-			createNotification(app, companyId, "Exploration réussie !", fmt.Sprintf("Gisement découvert : %.0f unités (Richesse: %.2f)", quantity, richness))
+			createNotification(app, companyId, "Exploration réussie !", fmt.Sprintf("Gisement découvert : %.0f unités (Niveau %d)", quantity, size))
 		}
 	} else {
 		exploration.Set("status", "Echec")

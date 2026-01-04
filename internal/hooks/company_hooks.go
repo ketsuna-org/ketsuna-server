@@ -54,10 +54,16 @@ func registerCompanyHooks(app *pocketbase.PocketBase) {
 		return e.Next()
 	})
 
-	// After create: attach to owner's owned_companies
+	// After create: attach to owner's owned_companies and create CEO employee
 	app.OnRecordAfterCreateSuccess("companies").BindFunc(func(e *core.RecordEvent) error {
 		company := e.Record
+		companyId := company.Id
+		companyName := company.GetString("name")
 		ceoId := company.GetString("ceo")
+
+		// Create CEO employee for this company
+		EnsureCEOOnCompanyCreation(app, companyId, companyName)
+
 		if ceoId == "" {
 			return nil
 		}

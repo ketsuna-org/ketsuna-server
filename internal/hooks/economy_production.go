@@ -182,11 +182,15 @@ func (l *EconomyLogic) processPassiveProduction(companyId string, assignment *co
 			return fmt.Errorf("deposit empty or invalid")
 		}
 
-		// Apply Richness Multiplier to Production Speed or Quantity?
-		// Let's say Richness multiplies Quantity
-		richness := deposit.GetFloat("richness")
-		if richness > 0 {
-			finalQty = int(float64(finalQty) * richness)
+		// Apply Size Level Multiplier to Production Quantity
+		// Size is a level from 1-10, convert to multiplier (0.2 to 2.0)
+		size := deposit.GetFloat("size")
+		if size > 0 {
+			multiplier := size / 5.0 // Level 5 = 1.0x, Level 10 = 2.0x, Level 1 = 0.2x
+			finalQty = int(float64(finalQty) * multiplier)
+			if finalQty < 1 {
+				finalQty = 1
+			}
 		}
 	} else if productRecord.GetBool("is_explorable") {
 		// Redundant check but explicit: logic shouldn't reach here if explorable and no deposit
