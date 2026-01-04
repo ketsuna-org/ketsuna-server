@@ -216,8 +216,16 @@ func (l *EconomyLogic) processPassiveProduction(companyId string, assignment *co
 					}
 
 					// Decrement Deposit
-					deposit.Set("quantity", remaining-float64(finalQty))
+					newQty := remaining - float64(finalQty)
+					deposit.Set("quantity", newQty)
 					l.app.Save(deposit)
+
+					// Delete deposit and unassign machine if empty
+					if newQty <= 0 {
+						assignment.Set("deposit", "")
+						l.app.Save(assignment)
+						l.app.Delete(deposit)
+					}
 				}
 
 				err := l.inventory.UpdateInventory(l.app, companyId, productId, finalQty)
@@ -234,8 +242,16 @@ func (l *EconomyLogic) processPassiveProduction(companyId string, assignment *co
 			if float64(finalQty) > remaining {
 				finalQty = int(remaining)
 			}
-			deposit.Set("quantity", remaining-float64(finalQty))
+			newQty := remaining - float64(finalQty)
+			deposit.Set("quantity", newQty)
 			l.app.Save(deposit)
+
+			// Delete deposit and unassign machine if empty
+			if newQty <= 0 {
+				assignment.Set("deposit", "")
+				l.app.Save(assignment)
+				l.app.Delete(deposit)
+			}
 		}
 
 		_ = l.inventory.UpdateInventory(l.app, companyId, productId, finalQty)

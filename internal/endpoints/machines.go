@@ -132,7 +132,7 @@ func registerMachineEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent) {
 			if machineItem != nil {
 				itemType := machineItem.GetString("type")
 				switch itemType {
-case "Machine":
+				case "Machine":
 					machineTypeCount++
 				case "Stockage":
 					stockageTypeCount++
@@ -237,5 +237,75 @@ case "Machine":
 		}
 
 		return c.JSON(200, map[string]bool{"success": true})
+	})
+
+	// POST /api/machines/remove - Remove a machine and return it to inventory
+	e.Router.POST("/api/machines/remove", func(c *core.RequestEvent) error {
+		authRecord := c.Auth
+		if authRecord == nil {
+			return apis.NewUnauthorizedError("Non connecté", nil)
+		}
+
+		type req struct {
+			MachineId string `json:"machineId"`
+		}
+		var data req
+		if err := c.BindBody(&data); err != nil {
+			return apis.NewBadRequestError("Données invalides", err)
+		}
+
+		if data.MachineId == "" {
+			return apis.NewBadRequestError("machineId requis", nil)
+		}
+
+		machine, err := app.FindRecordById("machines", data.MachineId)
+		if err != nil {
+			return apis.NewBadRequestError("Machine introuvable", err)
+		}
+
+		companyId := authRecord.GetString("active_company")
+		if machine.GetString("company") != companyId {
+			return apis.NewForbiddenError("Cette machine ne vous appartient pas", nil)
+		}
+
+		return app.RunInTransaction(func(txApp core.App) error {
+			machineItemId := machine.GetString("machine")
+
+			// 1. Delete the machine record
+			if err := txApp.Delete(machine); err != nil {
+				return apis.NewBadRequestError("Erreur lors de la suppression", err)
+			}
+
+			// 2. Restore the item to inventory
+			if machineItemId != "" {
+				// Check if inventory entry exists
+				inventory, err := txApp.FindFirstRecordByFilter("inventory",
+					fmt.Sprintf("company = '%s' && item = '%s'", companyId, machineItemId))
+
+				if err != nil {
+					// Create new inventory entry
+					invCollection, _ := txApp.FindCollectionByNameOrId("inventory")
+					newInv := core.NewRecord(invCollection)
+					newInv.Set("company", companyId)
+					newInv.Set("item", machineItemId)
+					newInv.Set("quantity", 1)
+					if err := txApp.Save(newInv); err != nil {
+						return apis.NewBadRequestError("Erreur création inventaire", err)
+					}
+				} else {
+					// Increment existing inventory
+					currentQty := inventory.GetInt("quantity")
+					inventory.Set("quantity", currentQty+1)
+					if err := txApp.Save(inventory); err != nil {
+						return apis.NewBadRequestError("Erreur mise à jour inventaire", err)
+					}
+				}
+			}
+
+			return c.JSON(200, map[string]interface{}{
+				"success": true,
+				"message": "Machine retirée et renvoyée au stock",
+			})
+		})
 	})
 }

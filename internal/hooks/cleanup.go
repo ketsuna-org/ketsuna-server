@@ -40,3 +40,45 @@ func PurgeExcessMachines(app *pocketbase.PocketBase) {
 	}
 	app.Logger().Info("[CLEANUP] Finished.")
 }
+
+// PurgeEmptyDeposits removes all deposits with quantity <= 0 and unassigns machines from them.
+// This is called on server startup to clean up stale data.
+func PurgeEmptyDeposits(app *pocketbase.PocketBase) {
+	app.Logger().Info("[CLEANUP] Starting PurgeEmptyDeposits...")
+
+	// Find all empty deposits
+	emptyDeposits, err := app.FindRecordsByFilter("deposits", "quantity <= 0", "", 0, 0)
+	if err != nil {
+		app.Logger().Error("[CLEANUP] Failed to fetch empty deposits", "error", err)
+		return
+	}
+
+	if len(emptyDeposits) == 0 {
+		app.Logger().Info("[CLEANUP] No empty deposits found.")
+		return
+	}
+
+	app.Logger().Info("[CLEANUP] Found empty deposits to purge", "count", len(emptyDeposits))
+
+	for _, deposit := range emptyDeposits {
+		depositId := deposit.Id
+
+		// Unassign any machines linked to this deposit
+		machines, err := app.FindRecordsByFilter("machines", "deposit = '"+depositId+"'", "", 0, 0)
+		if err == nil {
+			for _, m := range machines {
+				m.Set("deposit", "")
+				if err := app.Save(m); err != nil {
+					app.Logger().Error("[CLEANUP] Failed to unassign machine from deposit", "machine", m.Id, "error", err)
+				}
+			}
+		}
+
+		// Delete the deposit
+		if err := app.Delete(deposit); err != nil {
+			app.Logger().Error("[CLEANUP] Failed to delete empty deposit", "deposit", depositId, "error", err)
+		}
+	}
+
+	app.Logger().Info("[CLEANUP] PurgeEmptyDeposits completed", "deleted", len(emptyDeposits))
+}
