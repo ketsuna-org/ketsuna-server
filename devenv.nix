@@ -4,6 +4,7 @@
   packages = [ 
     pkgs.git 
     pkgs.gcc # Often needed for CGO if PocketBase uses sqlite features
+    pkgs.bashInteractive
   ];
 
   languages.go.enable = true;
