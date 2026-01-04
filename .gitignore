@@ -55,6 +55,6 @@ devenv.local.yaml
 server
 
 
-pb_data/
+pb_data/auxiliary.db*
 pb_hooks/
 pb_migrations/
