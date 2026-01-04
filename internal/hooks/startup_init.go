@@ -97,3 +97,17 @@ func EnsureCEOOnCompanyCreation(app *pocketbase.PocketBase, companyId string, co
 	createCEOEmployee(app, companyId, companyName)
 	app.Logger().Info("[COMPANY] Auto-created CEO for new company", "company", companyName)
 }
+
+// EnsureWoodDepositOnCompanyCreation is called when a company is created to auto-add a wood deposit
+func EnsureWoodDepositOnCompanyCreation(app *pocketbase.PocketBase, companyId string) {
+	// Find the "Bois" item
+	woodItems, err := app.FindRecordsByFilter("items", "name ~ 'Bois'", "", 1, 0)
+	if err != nil || len(woodItems) == 0 {
+		app.Logger().Warn("[COMPANY] Could not find 'Bois' item, skipping deposit creation")
+		return
+	}
+	woodItemId := woodItems[0].Id
+
+	createWoodDeposit(app, companyId, woodItemId)
+	app.Logger().Info("[COMPANY] Auto-created Wood Deposit for new company", "company", companyId)
+}

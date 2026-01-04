@@ -64,6 +64,9 @@ func registerCompanyHooks(app *pocketbase.PocketBase) {
 		// Create CEO employee for this company
 		EnsureCEOOnCompanyCreation(app, companyId, companyName)
 
+		// Create default Wood Deposit
+		EnsureWoodDepositOnCompanyCreation(app, companyId)
+
 		if ceoId == "" {
 			return nil
 		}
