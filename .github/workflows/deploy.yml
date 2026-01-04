@@ -6,8 +6,9 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-and-deploy:
-    runs-on: self-hosted
+  build:
+    name: Build (GitHub Runner)
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -17,17 +18,34 @@ jobs:
         with:
           go-version: "1.25.4"
 
-      - name: Build Binary
+      - name: Build Binary (ARM64)
         run: |
-          go build -o pocketbase ./cmd/main.go
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o pocketbase ./cmd/main.go
 
-      - name: Deploy to Production
+      - name: Upload Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: pocketbase-binary
+          path: pocketbase
+          retention-days: 1
+
+  deploy:
+    name: Deploy (Self Hosted)
+    needs: build
+    runs-on: self-hosted
+    steps:
+      - name: Download Binary
+        uses: actions/download-artifact@v4
+        with:
+          name: pocketbase-binary
+
+      - name: Install & Restart
         run: |
-          # Move executable to target directory (force overwrite)
+          # The binary is downloaded to the current workspace directory
+          # Move it to the target location
           mv -f pocketbase /home/orangepi/pocketbase/pocketbase
           chmod +x /home/orangepi/pocketbase/pocketbase
 
-      - name: Restart Service
-        run: |
+          echo "Restarting service..."
           echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S systemctl restart pocketbase
           echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S systemctl status pocketbase
