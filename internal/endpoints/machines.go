@@ -205,6 +205,25 @@ func registerMachineEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent) {
 			return apis.NewForbiddenError("Ce gisement ne vous appartient pas", nil)
 		}
 
+		// Check capacity (Machine = 5 slots)
+		size := deposit.GetInt("size")
+		if size <= 0 {
+			size = 1
+		}
+		maxCapacity := size * 5
+
+		// Count existing machines (excluding self if already assigned, though here usually pure assignment)
+		existingMachines, _ := app.FindRecordsByFilter("machines", fmt.Sprintf("deposit = '%s' && id != '%s'", data.DepositId, data.MachineId), "", 0, 0)
+		// Count employees
+		employeesOnDeposit, _ := app.FindRecordsByFilter("employees", fmt.Sprintf("deposit = '%s'", data.DepositId), "", 0, 0)
+
+		currentOccupancy := (len(existingMachines) * 5) + len(employeesOnDeposit)
+		newOccupancy := currentOccupancy + 5
+
+		if newOccupancy > maxCapacity {
+			return apis.NewBadRequestError(fmt.Sprintf("Capacité du gisement insuffisante. Une machine prend 5 places. (%d/%d disponibles)", maxCapacity-currentOccupancy, maxCapacity), nil)
+		}
+
 		// Verify compatibility
 		machineItem, err := app.FindRecordById("items", machine.GetString("machine"))
 		if err != nil {

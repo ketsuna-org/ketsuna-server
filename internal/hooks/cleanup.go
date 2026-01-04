@@ -1,6 +1,8 @@
 package hooks
 
 import (
+	"math/rand"
+
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase"
 )
@@ -81,4 +83,38 @@ func PurgeEmptyDeposits(app *pocketbase.PocketBase) {
 	}
 
 	app.Logger().Info("[CLEANUP] PurgeEmptyDeposits completed", "deleted", len(emptyDeposits))
+}
+
+// FixZeroLevelDeposits assigns random levels (1-10) to deposits that have size 0
+func FixZeroLevelDeposits(app *pocketbase.PocketBase) {
+	app.Logger().Info("[CLEANUP] Starting FixZeroLevelDeposits...")
+
+	// Find all deposits with size = 0
+	zeroLevelDeposits, err := app.FindRecordsByFilter("deposits", "size = 0 || size = ''", "", 0, 0)
+	if err != nil {
+		app.Logger().Error("[CLEANUP] Failed to fetch zero-level deposits", "error", err)
+		return
+	}
+
+	if len(zeroLevelDeposits) == 0 {
+		app.Logger().Info("[CLEANUP] No zero-level deposits found.")
+		return
+	}
+
+	app.Logger().Info("[CLEANUP] Found zero-level deposits to fix", "count", len(zeroLevelDeposits))
+
+	fixedCount := 0
+	for _, deposit := range zeroLevelDeposits {
+		// Assign random level between 1 and 10
+		randomLevel := rand.Intn(10) + 1 // 1-10
+		deposit.Set("size", randomLevel)
+
+		if err := app.Save(deposit); err != nil {
+			app.Logger().Error("[CLEANUP] Failed to update deposit level", "deposit", deposit.Id, "error", err)
+		} else {
+			fixedCount++
+		}
+	}
+
+	app.Logger().Info("[CLEANUP] FixZeroLevelDeposits completed", "fixed", fixedCount)
 }

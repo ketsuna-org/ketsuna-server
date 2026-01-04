@@ -28,6 +28,16 @@ func registerEmployeeHooks(app *pocketbase.PocketBase) {
 			}
 		}
 
+		// Check deposit assignment conflict
+		newDeposit := e.Record.GetString("deposit")
+		if newDeposit != "" {
+			// Ensure not assigned to any machine
+			found, err := app.FindRecordsByFilter("machines", fmt.Sprintf("employees ~ '%s'", e.Record.Id), "", 1, 0)
+			if err == nil && len(found) > 0 {
+				return apis.NewBadRequestError("Cet employé est assigné à une machine. Retirez-le de la machine avant de l'assigner à un gisement.", nil)
+			}
+		}
+
 		// salary increase check
 		oldSalary := e.Record.Original().GetInt("salary")
 		newSalary := e.Record.GetInt("salary")

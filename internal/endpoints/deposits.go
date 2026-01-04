@@ -45,7 +45,7 @@ func registerDepositEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent) {
 		if size <= 0 {
 			size = 1
 		}
-		maxEmployees := size * 5
+		maxCapacity := size * 5
 
 		// Count current employees on this deposit
 		currentEmployees, _ := app.FindRecordsByFilter(
@@ -53,8 +53,13 @@ func registerDepositEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent) {
 			"deposit = '"+body.DepositId+"'",
 			"", 0, 0,
 		)
-		if len(currentEmployees) >= maxEmployees {
-			return apis.NewBadRequestError("Ce gisement a atteint sa capacité maximale d'employés", nil)
+
+		// Count machines on this deposit (Each machine counts as 5 employees)
+		currentMachines, _ := app.FindRecordsByFilter("machines", "deposit = '"+body.DepositId+"'", "", 0, 0)
+		machineOccupancy := len(currentMachines) * 5
+
+		if len(currentEmployees)+machineOccupancy >= maxCapacity {
+			return apis.NewBadRequestError("Ce gisement a atteint sa capacité maximale (Machines + Employés)", nil)
 		}
 
 		// Verify employee exists and belongs to company

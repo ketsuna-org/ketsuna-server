@@ -27,6 +27,11 @@ func registerMachineHooks(app *pocketbase.PocketBase, inv *InventoryLogic) {
 				if err == nil && len(found) > 0 {
 					return apis.NewBadRequestError("Un ou plusieurs employés sont déjà assignés à une autre machine.", nil)
 				}
+				// Check if assigned to deposit
+				emp, err := app.FindRecordById("employees", empId)
+				if err == nil && emp.GetString("deposit") != "" {
+					return apis.NewBadRequestError("Cet employé est déjà assigné à un gisement.", nil)
+				}
 			}
 		}
 
@@ -97,6 +102,7 @@ func registerMachineHooks(app *pocketbase.PocketBase, inv *InventoryLogic) {
 		if len(employeeIds) > 0 {
 			e.App.Logger().Info("[MACHINES] Validating update", "machineId", record.Id, "newEmployeeList", employeeIds)
 			for _, empId := range employeeIds {
+				// Check Machine
 				found, err := app.FindRecordsByFilter("machines", fmt.Sprintf("employees ~ '%s'", empId), "", 10, 0)
 				if err == nil {
 					e.App.Logger().Info("[MACHINES] Checked employee", "empId", empId, "foundInMachines", len(found))
@@ -109,6 +115,12 @@ func registerMachineHooks(app *pocketbase.PocketBase, inv *InventoryLogic) {
 					}
 				} else {
 					e.App.Logger().Error("[MACHINES] Error checking filter", "error", err)
+				}
+
+				// Check Deposit
+				emp, err := app.FindRecordById("employees", empId)
+				if err == nil && emp.GetString("deposit") != "" {
+					return apis.NewBadRequestError("Cet employé est déjà assigné à un gisement.", nil)
 				}
 			}
 		} else {
