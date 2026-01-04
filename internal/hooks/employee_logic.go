@@ -26,7 +26,8 @@ func (el *EmployeeLogic) HireEmployee(app core.App, companyId string) (*HiredEmp
 	// 1. Generate Stats
 	first := []string{"Jean", "Pierre", "Paul", "Jacques", "Marie", "Sophie", "Lucie", "Camille", "Thomas", "Nicolas", "Julien", "Antoine", "Lucas", "Emma", "Léa", "Chloé", "Manon", "Alex", "Maxime", "Léo", "Sarah", "Julie", "Hugo", "Gabriel", "Arthur"}
 	last := []string{"Dupont", "Durand", "Martin", "Bernard", "Petit", "Robert", "Richard", "Simon", "Michel", "Lefebvre", "Moreau", "Laurent", "Garcia", "Roux", "David", "Bertrand", "Garnier", "Lambert", "Faure", "Rousseau", "Blanc", "Guerin", "Boyer", "Chevalier", "Mathieu"}
-	postes := []string{"Ouvrier", "Technicien", "Ingénieur", "Superviseur", "Manutentionnaire", "Opérateur", "Analyste", "Logisticien", "Contremaître", "Directeur"}
+	// Use exact SELECT values from pb_schema.json (excluding PDG which is only for CEOs)
+	postes := []string{"Manutentionnaire", "Opérateur", "Ouvrier", "Mineur", "Explorateur"}
 
 	name := fmt.Sprintf("%s %s", first[rand.Intn(len(first))], last[rand.Intn(len(last))])
 	poste := postes[rand.Intn(len(postes))]
@@ -98,6 +99,13 @@ func (el *EmployeeLogic) HireEmployee(app core.App, companyId string) (*HiredEmp
 	record.Set("rarity", rarity)
 	record.Set("efficiency", efficiencyFormatted)
 	record.Set("salary", salary)
+
+	// New stats - random values based on rarity
+	baseStat := rarity + 1                                // 1-4 base depending on rarity
+	record.Set("mining", baseStat+rand.Intn(3))           // 1-6
+	record.Set("exploration_luck", baseStat+rand.Intn(3)) // 1-6
+	record.Set("energy", 50+rand.Intn(50))                // 50-100
+	record.Set("maintenance", baseStat+rand.Intn(3))      // 1-6
 
 	if err := app.Save(record); err != nil {
 		return nil, fmt.Errorf("failed to create employee record: %v", err)
