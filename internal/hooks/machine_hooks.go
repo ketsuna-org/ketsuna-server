@@ -39,17 +39,42 @@ func registerMachineHooks(app *pocketbase.PocketBase, inv *InventoryLogic) {
 			}
 		}
 
-		// 3. Check Inventory Stock
-		if !inv.HasEnoughItems(app, companyId, machineItemId, 1) {
-			return apis.NewBadRequestError("Vous n'avez pas cette machine en stock dans votre inventaire.", nil)
+		// 3. ATOMIC: Check and Deduct Inventory using transaction
+		// This prevents race conditions when multiple machines are created simultaneously
+		var deductErr error
+		txErr := app.RunInTransaction(func(txApp core.App) error {
+			// Re-fetch inventory inside transaction for fresh data
+			inventory, err := txApp.FindFirstRecordByFilter("inventory",
+				fmt.Sprintf("company = '%s' && item = '%s'", companyId, machineItemId))
+			if err != nil {
+				deductErr = apis.NewBadRequestError("Vous n'avez pas cette machine en stock dans votre inventaire.", nil)
+				return deductErr
+			}
+
+			currentQty := inventory.GetInt("quantity")
+			if currentQty < 1 {
+				deductErr = apis.NewBadRequestError("Stock insuffisant: vous n'avez plus cette machine en inventaire.", nil)
+				return deductErr
+			}
+
+			// Deduct within transaction
+			inventory.Set("quantity", currentQty-1)
+			if err := txApp.Save(inventory); err != nil {
+				deductErr = apis.NewBadRequestError("Erreur lors de la mise à jour de l'inventaire.", nil)
+				return deductErr
+			}
+
+			app.Logger().Info("[MACHINES] Machine assigned (tx)", "machineId", machineItemId, "companyId", companyId, "remaining", currentQty-1)
+			return nil
+		})
+
+		if txErr != nil || deductErr != nil {
+			if deductErr != nil {
+				return deductErr
+			}
+			return apis.NewBadRequestError("Erreur de transaction", txErr)
 		}
 
-		// 4. Deduct from Inventory
-		if err := inv.UpdateInventory(app, companyId, machineItemId, -1); err != nil {
-			return apis.NewBadRequestError(fmt.Sprintf("Erreur lors de la mise à jour de l'inventaire: %v", err), nil)
-		}
-
-		app.Logger().Info("[MACHINES] Machine assigned", "machineId", machineItemId, "companyId", companyId)
 		return e.Next()
 	})
 
