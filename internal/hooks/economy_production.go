@@ -177,8 +177,8 @@ func (l *EconomyLogic) processPassiveProduction(companyId string, assignment *co
 	if depositId != "" {
 		var err error
 		deposit, err = l.app.FindRecordById("deposits", depositId)
-		if err != nil || deposit.GetFloat("quantity") <= 0 {
-			// Deposit empty or invalid -> Stop production
+		if err != nil || deposit.GetFloat("quantity") < 1 {
+			// Deposit empty or invalid -> Stop production (< 1 to handle floating point)
 			return fmt.Errorf("deposit empty or invalid")
 		}
 
@@ -211,7 +211,7 @@ func (l *EconomyLogic) processPassiveProduction(companyId string, assignment *co
 				// Cap quantity by deposit remaining
 				if deposit != nil {
 					remaining := deposit.GetFloat("quantity")
-					if remaining <= 0 {
+					if remaining < 1 {
 						// Deposit already empty - unassign and delete
 						assignment.Set("deposit", "")
 						assignment.Set("production_started_at", types.DateTime{}) // Reset production
@@ -232,7 +232,7 @@ func (l *EconomyLogic) processPassiveProduction(companyId string, assignment *co
 					l.app.Save(deposit)
 
 					// Delete deposit and unassign machine if empty
-					if newQty <= 0 {
+					if newQty < 1 {
 						assignment.Set("deposit", "")
 						l.app.Save(assignment)
 						l.app.Delete(deposit)
@@ -250,7 +250,7 @@ func (l *EconomyLogic) processPassiveProduction(companyId string, assignment *co
 		// Immediate
 		if deposit != nil {
 			remaining := deposit.GetFloat("quantity")
-			if remaining <= 0 {
+			if remaining < 1 {
 				// Deposit already empty - unassign and delete
 				assignment.Set("deposit", "")
 				l.app.Save(assignment)
@@ -268,7 +268,7 @@ func (l *EconomyLogic) processPassiveProduction(companyId string, assignment *co
 			l.app.Save(deposit)
 
 			// Delete deposit and unassign machine if empty
-			if newQty <= 0 {
+			if newQty < 1 {
 				assignment.Set("deposit", "")
 				l.app.Save(assignment)
 				l.app.Delete(deposit)

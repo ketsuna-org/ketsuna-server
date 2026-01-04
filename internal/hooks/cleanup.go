@@ -46,8 +46,8 @@ func PurgeExcessMachines(app *pocketbase.PocketBase) {
 func PurgeEmptyDeposits(app *pocketbase.PocketBase) {
 	app.Logger().Info("[CLEANUP] Starting PurgeEmptyDeposits...")
 
-	// Find all empty deposits
-	emptyDeposits, err := app.FindRecordsByFilter("deposits", "quantity <= 0", "", 0, 0)
+	// Find all empty deposits (< 1 to handle floating point values like 0.5)
+	emptyDeposits, err := app.FindRecordsByFilter("deposits", "quantity < 1", "", 0, 0)
 	if err != nil {
 		app.Logger().Error("[CLEANUP] Failed to fetch empty deposits", "error", err)
 		return
