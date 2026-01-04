@@ -211,8 +211,19 @@ func (l *EconomyLogic) processPassiveProduction(companyId string, assignment *co
 				// Cap quantity by deposit remaining
 				if deposit != nil {
 					remaining := deposit.GetFloat("quantity")
+					if remaining <= 0 {
+						// Deposit already empty - unassign and delete
+						assignment.Set("deposit", "")
+						assignment.Set("production_started_at", types.DateTime{}) // Reset production
+						l.app.Save(assignment)
+						l.app.Delete(deposit)
+						return nil // Skip production
+					}
 					if float64(finalQty) > remaining {
 						finalQty = int(remaining)
+					}
+					if finalQty <= 0 {
+						return nil // Nothing to produce
 					}
 
 					// Decrement Deposit
@@ -239,8 +250,18 @@ func (l *EconomyLogic) processPassiveProduction(companyId string, assignment *co
 		// Immediate
 		if deposit != nil {
 			remaining := deposit.GetFloat("quantity")
+			if remaining <= 0 {
+				// Deposit already empty - unassign and delete
+				assignment.Set("deposit", "")
+				l.app.Save(assignment)
+				l.app.Delete(deposit)
+				return nil // Skip production
+			}
 			if float64(finalQty) > remaining {
 				finalQty = int(remaining)
+			}
+			if finalQty <= 0 {
+				return nil // Nothing to produce
 			}
 			newQty := remaining - float64(finalQty)
 			deposit.Set("quantity", newQty)
