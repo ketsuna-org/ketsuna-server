@@ -1,8 +1,6 @@
 package hooks
 
 import (
-	"math/rand"
-
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase"
 )
@@ -45,122 +43,140 @@ func PurgeExcessMachines(app *pocketbase.PocketBase) {
 
 // PurgeEmptyDeposits removes all deposits with quantity <= 0 and unassigns machines from them.
 // This is called on server startup to clean up stale data.
+// Reformatted to use SQL for reliability.
 func PurgeEmptyDeposits(app *pocketbase.PocketBase) {
-	app.Logger().Info("[CLEANUP] Starting PurgeEmptyDeposits...")
+	app.Logger().Info("[CLEANUP] PurgeEmptyDeposits (SQL)...")
 
-	// Find all empty deposits (< 1 to handle floating point values like 0.5)
-	emptyDeposits, err := app.FindRecordsByFilter("deposits", "quantity < 1", "", 0, 0)
+	// 1. Unassign machines from empty deposits
+	// UPDATE machines SET deposit='' WHERE deposit IN (SELECT id FROM deposits WHERE quantity < 1)
+	subQuery := app.DB().Select("id").From("deposits").Where(dbx.NewExp("quantity < 1"))
+	_, err := app.DB().Update("machines", dbx.Params{"deposit": ""}, dbx.In("deposit", subQuery)).Execute()
 	if err != nil {
-		app.Logger().Error("[CLEANUP] Failed to fetch empty deposits", "error", err)
-		return
+		app.Logger().Error("[CLEANUP] Failed to unassign machines from empty deposits", "error", err)
 	}
 
-	if len(emptyDeposits) == 0 {
-		app.Logger().Info("[CLEANUP] No empty deposits found.")
-		return
-	}
-
-	app.Logger().Info("[CLEANUP] Found empty deposits to purge", "count", len(emptyDeposits))
-
-	for _, deposit := range emptyDeposits {
-		depositId := deposit.Id
-
-		// Unassign any machines linked to this deposit
-		machines, err := app.FindRecordsByFilter("machines", "deposit = '"+depositId+"'", "", 0, 0)
-		if err == nil {
-			for _, m := range machines {
-				m.Set("deposit", "")
-				if err := app.Save(m); err != nil {
-					app.Logger().Error("[CLEANUP] Failed to unassign machine from deposit", "machine", m.Id, "error", err)
-				}
-			}
-		}
-
-		// Delete the deposit
-		if err := app.Delete(deposit); err != nil {
-			app.Logger().Error("[CLEANUP] Failed to delete empty deposit", "deposit", depositId, "error", err)
+	// 2. Delete empty deposits
+	// DELETE FROM deposits WHERE quantity < 1
+	result, err := app.DB().Delete("deposits", dbx.NewExp("quantity < 1")).Execute()
+	if err != nil {
+		app.Logger().Error("[CLEANUP] Failed to delete empty deposits", "error", err)
+	} else {
+		affected, _ := result.RowsAffected()
+		if affected > 0 {
+			app.Logger().Info("[CLEANUP] Deleted empty deposits", "count", affected)
 		}
 	}
-
-	app.Logger().Info("[CLEANUP] PurgeEmptyDeposits completed", "deleted", len(emptyDeposits))
 }
 
 // FixZeroLevelDeposits assigns random levels (1-10) to deposits that have size 0
+// Reformatted to use SQL for reliability.
 func FixZeroLevelDeposits(app *pocketbase.PocketBase) {
-	app.Logger().Info("[CLEANUP] Starting FixZeroLevelDeposits...")
+	app.Logger().Info("[CLEANUP] FixZeroLevelDeposits (SQL)...")
 
-	// Find all deposits with size = 0
-	zeroLevelDeposits, err := app.FindRecordsByFilter("deposits", "size = 0 || size = ''", "", 0, 0)
+	// UPDATE deposits SET size = ABS(RANDOM() % 10) + 1 WHERE size <= 0 OR size IS NULL
+	// SQLite syntax
+	_, err := app.DB().NewQuery("UPDATE deposits SET size = ABS(RANDOM() % 10) + 1 WHERE size <= 0 OR size IS NULL OR size = ''").Execute()
 	if err != nil {
-		app.Logger().Error("[CLEANUP] Failed to fetch zero-level deposits", "error", err)
-		return
+		app.Logger().Error("[CLEANUP] Failed to fix zero-level deposits", "error", err)
+	} else {
+		app.Logger().Info("[CLEANUP] FixZeroLevelDeposits executed.")
 	}
-
-	if len(zeroLevelDeposits) == 0 {
-		app.Logger().Info("[CLEANUP] No zero-level deposits found.")
-		return
-	}
-
-	app.Logger().Info("[CLEANUP] Found zero-level deposits to fix", "count", len(zeroLevelDeposits))
-
-	fixedCount := 0
-	for _, deposit := range zeroLevelDeposits {
-		// Assign random level between 1 and 10
-		randomLevel := rand.Intn(10) + 1 // 1-10
-		deposit.Set("size", randomLevel)
-
-		if err := app.Save(deposit); err != nil {
-			app.Logger().Error("[CLEANUP] Failed to update deposit level", "deposit", deposit.Id, "error", err)
-		} else {
-			fixedCount++
-		}
-	}
-
-	app.Logger().Info("[CLEANUP] FixZeroLevelDeposits completed", "fixed", fixedCount)
 }
 
 // EnforceDepositCapacity cleans up surplus machines/employees from deposits that exceed capacity.
 // Capacity Rule: Size * 5. Machine = 5. Employee = 1.
 func EnforceDepositCapacity(app *pocketbase.PocketBase) {
-fo("[CLEANUP] Enforcing deposit capacities...")
+	app.Logger().Info("[CLEANUP] Enforcing deposit capacities (Bulk SQL)...")
 
-err := app.FindRecordsByFilter("deposits", "", "", 0, 0)
-err != nil {
-UP] Failed to fetch deposits", "error", err)
+	// Get all deposits logic is okay, but if too many deposits, might be slow.
+	// But usually deposits are few (per user).
+	deposits, err := app.FindRecordsByFilter("deposits", "", "", 0, 0)
+	if err != nil {
+		app.Logger().Error("[CLEANUP] Failed to fetch deposits", "error", err)
+		return
+	}
 
+	for _, dep := range deposits {
+		size := dep.GetInt("size")
+		if size <= 0 {
+			size = 1
+		}
+		maxCapacity := size * 5
 
-_, dep := range deposits {
-:= dep.GetInt("size")
-size <= 0 {
-= 1
- := size * 5
+		// Count directly from DB for speed
+		var machCount int
+		app.DB().Select("count(*)").From("machines").Where(dbx.HashExp{"deposit": dep.Id}).Row(&machCount)
 
-Use LIFO (Last Assigned First Removed)? "created DESC" implies newest first.
-es, _ := app.FindRecordsByFilter("machines", "deposit='"+dep.Id+"'", "created DESC", 0, 0)
-ees, _ := app.FindRecordsByFilter("employees", "deposit='"+dep.Id+"'", "created DESC", 0, 0)
+		var empCount int
+		app.DB().Select("count(*)").From("employees").Where(dbx.HashExp{"deposit": dep.Id}).Row(&empCount)
 
-eOccupancy := len(machines) * 5
-eeOccupancy := len(employees)
-tOccupancy := machineOccupancy + employeeOccupancy
+		currentOccupancy := (machCount * 5) + empCount
 
-currentOccupancy > maxCapacity {
-fo("[CLEANUP] Deposit over capacity", "id", dep.Id, "capacity", maxCapacity, "used", currentOccupancy)
+		if currentOccupancy > maxCapacity {
+			app.Logger().Info("[CLEANUP] Deposit over capacity", "id", dep.Id, "capacity", maxCapacity, "used", currentOccupancy)
 
-Remove Surplus Machines First (Most impactful)
-_, m := range machines {
-currentOccupancy <= maxCapacity {
-"")
-err := app.Save(m); err == nil {
-tOccupancy -= 5
-fo("[CLEANUP] Unassigned surplus machine", "machine", m.Id)
+			// Strategy: Prioritize Employees (keep them), remove surplus Machines.
+			// 1. Check if Employees alone exceed capacity
+			keptEmployees := empCount
+			if keptEmployees > maxCapacity {
+				// Too many employees. Keep maxCapacity.
+				keptEmployees = maxCapacity
 
-If still over, remove employees
-currentOccupancy > maxCapacity {
-_, e := range employees {
-currentOccupancy <= maxCapacity {
-"")
-err := app.Save(e); err == nil {
-tOccupancy -= 1
-fo("[CLEANUP] Unassigned surplus employee", "employee", e.Id)
-fo("[CLEANUP] EnforceDepositCapacity finished.")
+				// Identify IDs to keep
+				var keepEmpIds []interface{}
+				// Retrieve IDs as []interface{} for dbx.NotIn
+				var ids []string
+				app.DB().Select("id").From("employees").Where(dbx.HashExp{"deposit": dep.Id}).OrderBy("created DESC").Limit(int64(keptEmployees)).Column(&ids)
+				for _, id := range ids {
+					keepEmpIds = append(keepEmpIds, id)
+				}
+
+				// Unassign others
+				if len(keepEmpIds) > 0 {
+					_, err := app.DB().Update("employees", dbx.Params{"deposit": ""}, dbx.And(dbx.HashExp{"deposit": dep.Id}, dbx.Not(dbx.HashExp{"id": keepEmpIds}))).Execute()
+					if err != nil {
+						app.Logger().Error("[CLEANUP] Failed to bulk unassign employees", "error", err)
+					}
+				}
+			}
+
+			// 2. Calculate remaining space for machines
+			remainingCap := maxCapacity - keptEmployees
+			if remainingCap < 0 {
+				remainingCap = 0
+			}
+
+			allowedMachines := remainingCap / 5
+
+			if machCount > allowedMachines {
+				// We need to remove surplus machines
+				var keepMachIds []interface{}
+				if allowedMachines > 0 {
+					var ids []string
+					app.DB().Select("id").From("machines").Where(dbx.HashExp{"deposit": dep.Id}).OrderBy("created DESC").Limit(int64(allowedMachines)).Column(&ids)
+					for _, id := range ids {
+						keepMachIds = append(keepMachIds, id)
+					}
+				}
+
+				// Update matches: deposit=CurrentDep AND id NOT IN keepMachIds
+
+				var verifyExpr dbx.Expression
+				if len(keepMachIds) > 0 {
+					verifyExpr = dbx.And(dbx.HashExp{"deposit": dep.Id}, dbx.Not(dbx.HashExp{"id": keepMachIds}))
+				} else {
+					verifyExpr = dbx.HashExp{"deposit": dep.Id}
+				}
+
+				result, err := app.DB().Update("machines", dbx.Params{"deposit": ""}, verifyExpr).Execute()
+				if err != nil {
+					app.Logger().Error("[CLEANUP] Failed to bulk unassign machines", "error", err)
+				} else {
+					affected, _ := result.RowsAffected()
+					app.Logger().Info("[CLEANUP] Bulk unassigned surplus machines", "deposit", dep.Id, "unassigned", affected)
+				}
+			}
+		}
+	}
+	app.Logger().Info("[CLEANUP] EnforceDepositCapacity finished.")
 }
