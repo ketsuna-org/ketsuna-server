@@ -6,6 +6,7 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/types"
+	"ketsuna.com/server/internal/gamedata"
 )
 
 // ProcessDepositHarvesting handles harvesting for employees assigned directly to deposits
@@ -63,14 +64,14 @@ func (l *EconomyLogic) processDepositHarvest(companyId string, depositId string,
 		return fmt.Errorf("deposit has no resource")
 	}
 
-	// Get resource item for production time
-	resource, err := l.app.FindRecordById("items", resourceId)
-	if err != nil {
-		return err
+	// Get resource item from static gamedata for production time
+	resource := gamedata.GetItem(resourceId)
+	if resource == nil {
+		return fmt.Errorf("unknown resource: %s", resourceId)
 	}
 
 	// Production time in seconds (default 60s if not set)
-	productionTime := resource.GetInt("production_time")
+	productionTime := resource.ProductionTime
 	if productionTime <= 0 {
 		productionTime = 60
 	}

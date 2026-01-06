@@ -4,6 +4,7 @@ import (
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
+	"ketsuna.com/server/internal/gamedata"
 )
 
 func registerCompanyTechHooks(app *pocketbase.PocketBase) {
@@ -18,14 +19,13 @@ func registerCompanyTechHooks(app *pocketbase.PocketBase) {
 	app.OnRecordDeleteRequest("company_techs").BindFunc(func(e *core.RecordRequestEvent) error {
 		r := e.Record
 
-		techId := r.GetString("technology")
+		// Use technology_id text field instead of technology relation
+		techId := r.GetString("technology_id")
 
-		tech, err := app.FindRecordById("technologies", techId)
-		if err != nil {
-			return nil
-		}
+		// Use static gamedata for tech name
+		techName := gamedata.GetTechnologyName(techId)
+		app.Logger().Info("Technologie supprimée.", "technology", techName)
 
-		app.Logger().Info("Technologie supprimée.", "technology", tech.GetString("name"))
 		return e.Next()
 	})
 }

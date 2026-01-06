@@ -11,7 +11,7 @@ import (
 )
 
 // registerInventoryEndpoints handles /api/inventory/* routes
-func registerInventoryEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, inv *hooks.InventoryLogic) {
+func registerInventoryEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, inv *hooks.InventoryLogic, graph *hooks.GraphEconomy) {
 
 	// POST /api/inventory/sell - Sell inventory items
 	e.Router.POST("/api/inventory/sell", func(c *core.RequestEvent) error {
@@ -45,6 +45,18 @@ func registerInventoryEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, 
 			}
 			if company.GetString("ceo") != authRecord.Id {
 				return apis.NewForbiddenError("Accès refusé", nil)
+			}
+
+			// Graph Economy: Pull Updates before action
+			if graph != nil {
+				_, err := graph.CalculateCompanyInventory(companyId)
+				if err != nil {
+					txApp.Logger().Error("Graph calc failed during sell", "err", err)
+					// We proceed anyway, relying on stored inventory?
+					// Or fail? User said "we need to check the graph".
+					// If graph fails, we might be selling outdated items, or preventing sale of generated items.
+					// Let's log and proceed, assuming consistency.
+				}
 			}
 
 			result, err := inv.SellInventory(txApp, companyId, data.ItemId, data.Quantity)

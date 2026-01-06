@@ -7,13 +7,35 @@ import (
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
+	"ketsuna.com/server/internal/gamedata"
 )
 
-func registerMachineHooks(app *pocketbase.PocketBase, inv *InventoryLogic) {
+func registerMachineHooks(app *pocketbase.PocketBase, inv *InventoryLogic, graph *GraphEconomy) {
+	// Hook for Lazy Evaluation on View
+	app.OnRecordViewRequest("machines").BindFunc(func(e *core.RecordRequestEvent) error {
+		if graph != nil {
+			graph.CalculateNodeFlow(e.Record.Id, "machine")
+		}
+		return e.Next()
+	})
+
+	// Hook for Lazy Evaluation on List
+	// Caution: optimizing to avoid N+1 if listing many machines.
+	// But GraphEconomy handles individual nodes. N+1 is inherent to Graph traversal unless batched.
+	// For now, iterate and update.
+	app.OnRecordsListRequest("machines").BindFunc(func(e *core.RecordsListRequestEvent) error {
+		if graph != nil {
+			for _, rec := range e.Records {
+				graph.CalculateNodeFlow(rec.Id, "machine")
+			}
+		}
+		return e.Next()
+	})
+
 	app.OnRecordCreateRequest("machines").BindFunc(func(e *core.RecordRequestEvent) error {
 		record := e.Record
 		companyId := record.GetString("company")
-		machineItemId := record.GetString("machine")
+		machineItemId := record.GetString("machine_id")
 		employeeIds := record.GetStringSlice("employees")
 
 		if companyId == "" || machineItemId == "" {
@@ -35,10 +57,10 @@ func registerMachineHooks(app *pocketbase.PocketBase, inv *InventoryLogic) {
 			}
 		}
 
-		// 2. Check max_employee limit
-		machineItem, err := app.FindRecordById("items", machineItemId)
-		if err == nil {
-			maxEmp := machineItem.GetInt("max_employee")
+		// 2. Check max_employee limit using static gamedata
+		machineItem := gamedata.GetItem(machineItemId)
+		if machineItem != nil {
+			maxEmp := machineItem.MaxEmployee
 			if maxEmp > 0 && len(employeeIds) > maxEmp {
 				return apis.NewBadRequestError(fmt.Sprintf("Cette machine ne peut accueillir que %d employé(s) maximum.", maxEmp), nil)
 			}
@@ -48,9 +70,9 @@ func registerMachineHooks(app *pocketbase.PocketBase, inv *InventoryLogic) {
 		// This prevents race conditions when multiple machines are created simultaneously
 		var deductErr error
 		txErr := app.RunInTransaction(func(txApp core.App) error {
-			// Re-fetch inventory inside transaction for fresh data
+			// Re-fetch inventory inside transaction for fresh data (using item_id)
 			inventory, err := txApp.FindFirstRecordByFilter("inventory",
-				fmt.Sprintf("company = '%s' && item = '%s'", companyId, machineItemId))
+				fmt.Sprintf("company = '%s' && item_id = '%s'", companyId, machineItemId))
 			if err != nil {
 				deductErr = apis.NewBadRequestError("Vous n'avez pas cette machine en stock dans votre inventaire.", nil)
 				return deductErr
@@ -85,14 +107,14 @@ func registerMachineHooks(app *pocketbase.PocketBase, inv *InventoryLogic) {
 
 	app.OnRecordUpdateRequest("machines").BindFunc(func(e *core.RecordRequestEvent) error {
 		record := e.Record
-		machineItemId := record.GetString("machine")
+		machineItemId := record.GetString("machine_id")
 		employeeIds := record.GetStringSlice("employees")
 
-		// Check max_employee limit
+		// Check max_employee limit using static gamedata
 		if machineItemId != "" {
-			machineItem, err := app.FindRecordById("items", machineItemId)
-			if err == nil {
-				maxEmp := machineItem.GetInt("max_employee")
+			machineItem := gamedata.GetItem(machineItemId)
+			if machineItem != nil {
+				maxEmp := machineItem.MaxEmployee
 				if maxEmp > 0 && len(employeeIds) > maxEmp {
 					return apis.NewBadRequestError(fmt.Sprintf("Cette machine ne peut accueillir que %d employé(s) maximum. Vous essayez d'en assigner %d.", maxEmp, len(employeeIds)), nil)
 				}
@@ -132,7 +154,7 @@ func registerMachineHooks(app *pocketbase.PocketBase, inv *InventoryLogic) {
 	app.OnRecordDeleteRequest("machines").BindFunc(func(e *core.RecordRequestEvent) error {
 		record := e.Record
 		companyId := record.GetString("company")
-		machineItemId := record.GetString("machine")
+		machineItemId := record.GetString("machine_id")
 
 		if companyId != "" && machineItemId != "" {
 			if err := inv.UpdateInventory(app, companyId, machineItemId, 1); err != nil {
@@ -156,19 +178,20 @@ func EnforceMaxEmployees(app *pocketbase.PocketBase) {
 
 	fixedCount := 0
 	for _, machine := range machines {
-		machineItemId := machine.GetString("machine")
+		machineItemId := machine.GetString("machine_id")
 		employeeIds := machine.GetStringSlice("employees")
 
 		if machineItemId == "" || len(employeeIds) == 0 {
 			continue
 		}
 
-		machineItem, err := app.FindRecordById("items", machineItemId)
-		if err != nil {
+		// Use static gamedata for machine info
+		machineItem := gamedata.GetItem(machineItemId)
+		if machineItem == nil {
 			continue
 		}
 
-		maxEmp := machineItem.GetInt("max_employee")
+		maxEmp := machineItem.MaxEmployee
 		if maxEmp <= 0 {
 			continue // No limit defined
 		}
@@ -177,7 +200,7 @@ func EnforceMaxEmployees(app *pocketbase.PocketBase) {
 			excess := len(employeeIds) - maxEmp
 			app.Logger().Warn("[FIX] Machine has too many employees",
 				"machineId", machine.Id,
-				"machineName", machineItem.GetString("name"),
+				"machineName", machineItem.Name,
 				"current", len(employeeIds),
 				"max", maxEmp,
 				"excess", excess)
@@ -254,30 +277,27 @@ func AutoAssignDeposits(app core.App, companyId string) (int, error) {
 			continue
 		}
 
-		machineItemId := m.GetString("machine")
-		machineItem, err := app.FindRecordById("items", machineItemId)
-		if err != nil {
+		machineItemId := m.GetString("machine_id")
+		machineItem := gamedata.GetItem(machineItemId)
+		if machineItem == nil {
 			continue
 		}
 
 		// Check if machine output is "is_explorable" (meaning it needs a deposit)
-		// The machine item itself doesn't have "is_explorable", its PRODUCT does.
-		// Wait, the schema says:
-		// items -> product (relation)
-		// items -> is_explorable (boolean).
-		// Usually a "Drill" produces "Iron Ore". "Iron Ore" is explorable.
+		// The machine's product is what we check for explorable status
 
-		productId := machineItem.GetString("product")
+		productId := machineItem.Product
 		if productId == "" {
 			continue
 		}
 
-		productItem, err := app.FindRecordById("items", productId)
-		if err != nil {
+		// Use static gamedata for product item
+		productItem := gamedata.GetItem(productId)
+		if productItem == nil {
 			continue
 		}
 
-		if !productItem.GetBool("is_explorable") {
+		if !productItem.IsExplorable {
 			continue // Not a mining machine
 		}
 
@@ -348,12 +368,12 @@ func AutoAssignEmployees(app core.App, companyId string) (int, error) {
 	var machinesNeedingEmp []machineSlot
 
 	for _, m := range machines {
-		machineItemId := m.GetString("machine")
+		machineItemId := m.GetString("machine_id")
 		maxEmp := 1
 		if machineItemId != "" {
-			machineItem, err := app.FindRecordById("items", machineItemId)
-			if err == nil {
-				maxEmp = machineItem.GetInt("max_employee")
+			machineItem := gamedata.GetItem(machineItemId)
+			if machineItem != nil {
+				maxEmp = machineItem.MaxEmployee
 				if maxEmp <= 0 {
 					maxEmp = 1
 				}

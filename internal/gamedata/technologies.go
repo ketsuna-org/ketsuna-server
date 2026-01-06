@@ -83,6 +83,14 @@ var Technologies = map[string]Technology{
 		ItemUnlocked:  []string{"steel_press", "steel", "gear"},
 		Icon:          "⚙️",
 	},
+	"first_automatisation": {
+		ID: "first_automatisation", Name: "Un début d'automatisation.", Category: "industry",
+		Description: "Un début d'automatisation.",
+		Cost:        1000000, RequiredLevel: 10,
+		Prerequisites: []string{"steel_production"},
+		ItemUnlocked:  []string{"assembly_line", "electric_motor", "lithium", "battery_cell"},
+		Icon:          "🏭",
+	},
 
 	// -------------------------------------------------------------------------
 	// TIER 4 - Ère du Plastique (Niveau 10)
@@ -100,7 +108,7 @@ var Technologies = map[string]Technology{
 	// TIER 5 - Assemblage (Niveau 15)
 	// -------------------------------------------------------------------------
 	"assembly_line_tech": {
-		ID: "assembly_line_tech", Name: "Ligne d'assemblage Niveau 1", Category: "industry",
+		ID: "assembly_line_tech", Name: "Ligne d'assemble de premier Niveau.", Category: "industry",
 		Description: "Assembler des composants complexes en produits finis.",
 		Cost:        10000000, RequiredLevel: 15,
 		Prerequisites: []string{"plastic_era"},
@@ -194,4 +202,15 @@ func IsItemUnlockedByTech(itemId string) (bool, string) {
 		}
 	}
 	return false, ""
+}
+
+// GetTechnologyByName returns a technology by its display name, returns nil if not found
+// This is used for reconciling database records (which have names) to gamedata IDs
+func GetTechnologyByName(name string) *Technology {
+	for _, tech := range Technologies {
+		if tech.Name == name {
+			return &tech
+		}
+	}
+	return nil
 }

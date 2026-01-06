@@ -8,11 +8,11 @@ import (
 )
 
 // RegisterAll registers all custom API endpoints
-func RegisterAll(app *pocketbase.PocketBase, inv *hooks.InventoryLogic, eco *hooks.EconomyLogic, emp *hooks.EmployeeLogic) {
+func RegisterAll(app *pocketbase.PocketBase, inv *hooks.InventoryLogic, eco *hooks.EconomyLogic, emp *hooks.EmployeeLogic, graph *hooks.GraphEconomy) {
 	app.OnServe().BindFunc(func(e *core.ServeEvent) error {
 		// Register domain-specific endpoints
 		registerWorkshopEndpoints(app, e, inv)
-		registerInventoryEndpoints(app, e, inv)
+		registerInventoryEndpoints(app, e, inv, graph)
 		registerCompanyEndpoints(app, e, eco)
 		registerEmployeesEndpoints(app, e, emp)
 		registerMachineEndpoints(app, e)

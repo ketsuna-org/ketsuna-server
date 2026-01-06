@@ -94,7 +94,7 @@ var Items = map[string]Item{
 	// COMPOSANTS - Matériaux transformés
 	// -------------------------------------------------------------------------
 	"wooden_plank": {
-		ID: "wooden_plank", Name: "Planche de Bois", Type: ItemTypeComposant,
+		ID: "wooden_plank", Name: "Planche de bois", Type: ItemTypeComposant,
 		BasePrice: 15.45, Volatility: 0.10, Icon: "🪵",
 	},
 	"iron_ingot": {
@@ -176,6 +176,10 @@ var Items = map[string]Item{
 		ID: "solar_panel", Name: "Panneau Solaire", Type: ItemTypeMachine,
 		BasePrice: 2500, ProduceEnergy: 10, EnergyType: EnergyTypeSoleil, Icon: "☀️",
 	},
+	"charcoal_mine": {
+		ID: "charcoal_mine", Name: "Mine de Charbon", Type: ItemTypeMachine,
+		BasePrice: 2500, ProduceEnergy: 10, EnergyType: EnergyTypeSoleil, Icon: "☀️",
+	},
 
 	// -------------------------------------------------------------------------
 	// MACHINES - Tier 2 (Niveau 3+)
@@ -191,12 +195,12 @@ var Items = map[string]Item{
 		MaxEmployee: 2, NeedEnergy: 5, EnergyType: EnergyTypeElectricite, Icon: "🔥",
 	},
 	"copper_extractor": {
-		ID: "copper_extractor", Name: "Extraction Cuivre", Type: ItemTypeMachine,
+		ID: "copper_extractor", Name: "Extraction Minière de Cuivre", Type: ItemTypeMachine,
 		BasePrice: 20527, Product: "copper_ore", ProductQuantity: 3, ProductionTime: 60,
 		MaxEmployee: 3, NeedEnergy: 8, EnergyType: EnergyTypeElectricite, Icon: "🔶",
 	},
 	"iron_extractor": {
-		ID: "iron_extractor", Name: "Extraction Fer", Type: ItemTypeMachine,
+		ID: "iron_extractor", Name: "Extraction Minière de Fer", Type: ItemTypeMachine,
 		BasePrice: 18234, Product: "iron_ore", ProductQuantity: 5, ProductionTime: 50,
 		MaxEmployee: 3, NeedEnergy: 8, EnergyType: EnergyTypeElectricite, Icon: "⬛",
 	},
@@ -228,6 +232,11 @@ var Items = map[string]Item{
 		BasePrice: 45000, UseRecipe: "plastic_recipe", ProductionTime: 120,
 		MaxEmployee: 5, NeedEnergy: 50, EnergyType: EnergyTypeElectricite, Icon: "🏭",
 	},
+	"petrol_pumpjack": {
+		ID: "petrol_pumpjack", Name: "Pompe à Pétrole", Type: ItemTypeMachine,
+		BasePrice: 45000, UseRecipe: "crude_oil_recipe", ProductionTime: 120,
+		MaxEmployee: 5, NeedEnergy: 50, EnergyType: EnergyTypeElectricite, Icon: "🛢️",
+	},
 	"assembly_line": {
 		ID: "assembly_line", Name: "Ligne d'Assemblage", Type: ItemTypeMachine,
 		BasePrice: 85000, UseRecipe: "electric_motor_recipe", ProductionTime: 360,
@@ -241,6 +250,10 @@ var Items = map[string]Item{
 		ID: "hightech_factory", Name: "Usine High-Tech", Type: ItemTypeMachine,
 		BasePrice: 250000, UseRecipe: "smartphone_recipe", ProductionTime: 600,
 		MaxEmployee: 12, NeedEnergy: 200, EnergyType: EnergyTypeElectricite, Icon: "🏢",
+	},
+	"wind_turbine": {
+		ID: "wind_turbine", Name: "Éolienne (Production de 4 MW)", Type: ItemTypeMachine,
+		BasePrice: 250000, ProduceEnergy: 4, EnergyType: EnergyTypeElectricite, Icon: "🏢",
 	},
 }
 
@@ -311,4 +324,15 @@ func GetMinableItems() []Item {
 		}
 	}
 	return result
+}
+
+// GetItemByName returns an item by its display name, returns nil if not found
+// This is used for reconciling database records (which have names) to gamedata IDs
+func GetItemByName(name string) *Item {
+	for _, item := range Items {
+		if item.Name == name {
+			return &item
+		}
+	}
+	return nil
 }
