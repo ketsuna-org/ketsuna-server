@@ -1707,6 +1707,24 @@
             },
             {
                 "hidden": false,
+                "id": "geoPoint1587448267",
+                "name": "location",
+                "presentable": false,
+                "required": false,
+                "system": false,
+                "type": "geoPoint"
+            },
+            {
+                "hidden": false,
+                "id": "bool2105338258",
+                "name": "placed",
+                "presentable": false,
+                "required": false,
+                "system": false,
+                "type": "bool"
+            },
+            {
+                "hidden": false,
                 "id": "autodate2990389176",
                 "name": "created",
                 "onCreate": true,
