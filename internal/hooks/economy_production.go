@@ -7,6 +7,7 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/types"
+	"ketsuna.com/server/internal/gamedata"
 )
 
 // ProcessMachine handles the production logic for a single machine assignment
@@ -21,15 +22,10 @@ func (l *EconomyLogic) ProcessMachine(
 		return nil
 	}
 
-	// Ideally machine matching item is expanded in calling function
-	machineItem := assignment.ExpandedOne("machine")
+	machineItem := gamedata.GetItem(machineItemId)
 	if machineItem == nil {
-		// Fallback fetch if not expanded (should be expanded for loop perf)
-		var err error
-		machineItem, err = l.app.FindRecordById("items", machineItemId)
-		if err != nil {
-			return err
-		}
+		// If item is not in static data... maybe error or return?
+		return fmt.Errorf("unknown machine item: %s", machineItemId)
 	}
 
 	// 1. Calculate Efficiency
@@ -52,7 +48,7 @@ func (l *EconomyLogic) ProcessMachine(
 	}
 
 	// 2. Calculate Final Output Quantity
-	productQty := float64(machineItem.GetInt("product_quantity"))
+	productQty := float64(machineItem.ProductQuantity)
 	if productQty == 0 {
 		productQty = 1
 	}
@@ -66,8 +62,8 @@ func (l *EconomyLogic) ProcessMachine(
 	}
 
 	// 3. Energy Check & Penalty
-	needEnergy := machineItem.GetFloat("need_energy")
-	energyType := machineItem.GetString("energy_type")
+	needEnergy := machineItem.NeedEnergy
+	energyType := string(machineItem.EnergyType)
 
 	if energyType == "Soleil" && needEnergy > 0 {
 		if !IsSolarProductionActive() {
@@ -98,8 +94,8 @@ func (l *EconomyLogic) ProcessMachine(
 	}
 
 	// 4. Production Logic (Recipe or Passive)
-	recipeId := machineItem.GetString("use_recipe")
-	productId := machineItem.GetString("product")
+	recipeId := machineItem.UseRecipe
+	productId := machineItem.Product
 
 	if recipeId != "" {
 		return l.processRecipeProduction(companyId, assignment, machineItem, recipeId, finalQty)
@@ -110,7 +106,7 @@ func (l *EconomyLogic) ProcessMachine(
 	return nil
 }
 
-func (l *EconomyLogic) processRecipeProduction(companyId string, assignment *core.Record, _ *core.Record, recipeId string, finalQty int) error {
+func (l *EconomyLogic) processRecipeProduction(companyId string, assignment *core.Record, _ *gamedata.Item, recipeId string, finalQty int) error {
 	// Check technology
 	hasTech, techName := l.inventory.HasRequiredTechnology(l.app, companyId, recipeId)
 	if !hasTech {
@@ -118,11 +114,11 @@ func (l *EconomyLogic) processRecipeProduction(companyId string, assignment *cor
 		return fmt.Errorf("missing technology: %s", techName)
 	}
 
-	recipe, err := l.app.FindRecordById("recipes", recipeId)
-	if err != nil {
-		return err
+	recipe := gamedata.GetRecipe(recipeId)
+	if recipe == nil {
+		return fmt.Errorf("unknown recipe: %s", recipeId)
 	}
-	baseProductionTime := recipe.GetInt("production_time")
+	baseProductionTime := recipe.ProductionTime
 	effectiveProductionTime := float64(baseProductionTime)
 
 	if baseProductionTime > 0 {
@@ -152,21 +148,21 @@ func (l *EconomyLogic) processRecipeProduction(companyId string, assignment *cor
 	return nil
 }
 
-func (l *EconomyLogic) processPassiveProduction(companyId string, assignment *core.Record, machineItem *core.Record, productId string, finalQty int) error {
-	baseProductionTime := machineItem.GetInt("production_time")
+func (l *EconomyLogic) processPassiveProduction(companyId string, assignment *core.Record, machineItem *gamedata.Item, productId string, finalQty int) error {
+	baseProductionTime := machineItem.ProductionTime
 	effectiveProductionTime := float64(baseProductionTime)
 
 	// --- DEPOSIT CHECK LOGIC ---
 	// Fetch product item to check if it requires a deposit (minable)
-	productRecord, err := l.app.FindRecordById("items", productId)
-	if err != nil {
-		return err
+	productItem := gamedata.GetItem(productId)
+	if productItem == nil {
+		return fmt.Errorf("unknown product item: %s", productId)
 	}
 
 	depositId := assignment.GetString("deposit")
 	var deposit *core.Record
 
-	if productRecord.GetBool("is_explorable") {
+	if productItem.IsExplorable {
 		// Strict Check: Must have a deposit if the item comes from exploration
 		if depositId == "" {
 			return fmt.Errorf("missing deposit for explorable resource")
@@ -192,7 +188,7 @@ func (l *EconomyLogic) processPassiveProduction(companyId string, assignment *co
 				finalQty = 1
 			}
 		}
-	} else if productRecord.GetBool("is_explorable") {
+	} else if productItem.IsExplorable {
 		// Redundant check but explicit: logic shouldn't reach here if explorable and no deposit
 		return fmt.Errorf("missing deposit")
 	}

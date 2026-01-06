@@ -42,6 +42,7 @@ func RegisterHooks(app *pocketbase.PocketBase) {
 		PurgeEmptyDeposits(app)           // Clean up empty deposits
 		FixZeroLevelDeposits(app)         // Fix deposits with level 0
 		EnforceDepositCapacity(app)       // Clean up surplus assignments
+		SoftCleanWAL(app)                 // Perform initial WAL checkpoint
 
 		app.Logger().Info("[STARTUP] Running initial Market Supply Update...")
 		ecoLogic.UpdateMarketPrices()
@@ -77,5 +78,6 @@ func startEconomyTicker(app *pocketbase.PocketBase, eco *EconomyLogic) {
 		app.Logger().Info("[CRON] Executing Daily Payroll & Market Update (06:00 UTC)")
 		eco.UpdateMarketPrices()
 		eco.DeductDailyPayroll()
+		SoftCleanWAL(app) // Periodic WAL checkpoint
 	})
 }

@@ -6,6 +6,7 @@ import (
 	"math/rand"
 
 	"github.com/pocketbase/dbx"
+	"ketsuna.com/server/internal/gamedata"
 )
 
 // EconomyLogic struct is defined in economy_logic.go
@@ -36,11 +37,6 @@ func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
 		return nil
 	}
 
-	// Expand 'machine' item relation for performance
-	for _, m := range assignedMachines {
-		l.app.ExpandRecord(m, []string{"machine"}, nil)
-	}
-
 	// Pre-fetch employees for efficiency calculation
 	employees, err := l.app.FindRecordsByFilter(
 		"employees",
@@ -65,16 +61,17 @@ func (l *EconomyLogic) ProcessCompanyEconomy(companyId string) error {
 			return
 		}
 		for _, assignment := range assignedMachines {
-			machineItem := assignment.ExpandedOne("machine")
+			machineId := assignment.GetString("machine")
+			machineItem := gamedata.GetItem(machineId)
 			if machineItem == nil {
 				continue
 			}
 
-			if machineItem.GetString("type") != targetType {
+			if string(machineItem.Type) != targetType {
 				continue
 			}
 
-			canStoreEnergy := machineItem.GetFloat("can_store_energy")
+			canStoreEnergy := machineItem.CanStoreEnergy
 			if canStoreEnergy > 0 {
 				currentStored := assignment.GetFloat("stored_energy")
 				newStored := currentStored + energySurplus

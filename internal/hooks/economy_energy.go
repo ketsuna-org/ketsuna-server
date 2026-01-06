@@ -3,6 +3,8 @@ package hooks
 import (
 	"fmt"
 	"time"
+
+	"ketsuna.com/server/internal/gamedata"
 )
 
 type EnergyStatus struct {
@@ -50,7 +52,7 @@ func (l *EconomyLogic) CalculateEnergyStatus(companyId string) (EnergyStatus, er
 
 	// Expand 'machine' item relation to get energy stats
 	for _, m := range machines {
-		l.app.ExpandRecord(m, []string{"machine", "employees"}, nil)
+		l.app.ExpandRecord(m, []string{"employees"}, nil)
 	}
 
 	// We need employee efficiency data... it's complicated because efficiency is on Employee record.
@@ -60,7 +62,8 @@ func (l *EconomyLogic) CalculateEnergyStatus(companyId string) (EnergyStatus, er
 	// Actually Expand "employees" (relation multiple) works.
 
 	for _, assignment := range machines {
-		machineItem := assignment.ExpandedOne("machine")
+		machineId := assignment.GetString("machine")
+		machineItem := gamedata.GetItem(machineId)
 		if machineItem == nil {
 			continue
 		}
@@ -78,9 +81,9 @@ func (l *EconomyLogic) CalculateEnergyStatus(companyId string) (EnergyStatus, er
 		}
 
 		// Check if this machine produces energy
-		produceEnergy := machineItem.GetFloat("produce_energy")
+		produceEnergy := machineItem.ProduceEnergy
 		if produceEnergy > 0 {
-			energyType := machineItem.GetString("energy_type")
+			energyType := string(machineItem.EnergyType)
 
 			// Solar only produces during 8h-18h UTC
 			if energyType == "Soleil" && !status.IsSolarActive {
@@ -93,34 +96,34 @@ func (l *EconomyLogic) CalculateEnergyStatus(companyId string) (EnergyStatus, er
 		}
 
 		// Check if this machine stores energy
-		canStoreEnergy := machineItem.GetFloat("can_store_energy")
+		canStoreEnergy := machineItem.CanStoreEnergy
 		if canStoreEnergy > 0 {
 			status.MaxEnergyStored += canStoreEnergy
 			status.EnergyStored += assignment.GetFloat("stored_energy")
 		}
 
 		// Check if this machine consumes energy
-		needEnergy := machineItem.GetFloat("need_energy")
+		needEnergy := machineItem.NeedEnergy
 		if needEnergy > 0 {
-			energyType := machineItem.GetString("energy_type")
+			energyType := string(machineItem.EnergyType)
 			// Solar-powered machines don't consume grid electricity
 			if energyType != "Soleil" {
 				// Calculate Cycle Duration to normalize Power (Energy/Time)
 				cycleDuration := 1.0 // Default 1 second (Energy is per second)
-				
+
 				// 1. Check Recipe
-				recipeId := machineItem.GetString("use_recipe")
+				recipeId := machineItem.UseRecipe
 				if recipeId != "" {
-					recipe, err := l.app.FindRecordById("recipes", recipeId)
-					if err == nil {
-						dur := recipe.GetFloat("production_time")
+					recipe := gamedata.GetRecipe(recipeId)
+					if recipe != nil {
+						dur := float64(recipe.ProductionTime)
 						if dur > 1 {
 							cycleDuration = dur
 						}
 					}
 				} else {
 					// 2. Check Machine Base Production Time (Passive)
-					dur := machineItem.GetFloat("production_time")
+					dur := float64(machineItem.ProductionTime)
 					if dur > 1 {
 						cycleDuration = dur
 					}
