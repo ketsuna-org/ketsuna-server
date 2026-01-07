@@ -31,7 +31,7 @@ func RegisterHooks(app *pocketbase.PocketBase, inv *InventoryLogic, eco *Economy
 	registerStockHooks(app)
 	registerShareholderHooks(app)
 	registerInventoryHooks(app)
-	registerInventoryHooks(app)
+	registerDepositHooks(app)
 	registerRecipeHooks(app)
 	registerMachineHooks(app, inv, graph)
 	RegisterExplorationCron(app)

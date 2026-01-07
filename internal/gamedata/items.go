@@ -253,7 +253,7 @@ var Items = map[string]Item{
 	},
 	"wind_turbine": {
 		ID: "wind_turbine", Name: "Éolienne (Production de 4 MW)", Type: ItemTypeMachine,
-		BasePrice: 250000, ProduceEnergy: 4, EnergyType: EnergyTypeElectricite, Icon: "🏢",
+		BasePrice: 250000, ProduceEnergy: 4, EnergyType: EnergyTypeElectricite, Icon: "/icons/wind_turbine.png",
 	},
 }
 
