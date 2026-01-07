@@ -191,12 +191,12 @@ var Items = map[string]Item{
 	// -------------------------------------------------------------------------
 	"forestry_machine": {
 		ID: "forestry_machine", Name: "Exploitation Forestière", Type: ItemTypeMachine, Unit: UnitUnit,
-		BasePrice: 1042, Product: "wood", ProductQuantity: 2, ProductionTime: 120,
+		BasePrice: 1042, Product: "wood", ProductQuantity: 15, ProductionTime: 120,
 		MaxEmployee: 2, EnergyType: EnergyTypeManuel, Icon: "/icons/forestry_machine.png",
 	},
 	"basic_mining_machine": {
 		ID: "basic_mining_machine", Name: "Extraction Minière de base", Type: ItemTypeMachine, Unit: UnitUnit,
-		BasePrice: 2876, Product: "iron_ore", ProductQuantity: 3, ProductionTime: 50,
+		BasePrice: 2876, Product: "iron_ore", ProductQuantity: 15, ProductionTime: 50,
 		MaxEmployee: 2, EnergyType: EnergyTypeManuel, Icon: "/icons/basic_mining_machine.png",
 	},
 	"sawmill": {

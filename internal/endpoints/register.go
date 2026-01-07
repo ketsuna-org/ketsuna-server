@@ -16,7 +16,7 @@ func RegisterAll(app *pocketbase.PocketBase, inv *hooks.InventoryLogic, eco *hoo
 		// Register domain-specific endpoints
 		registerWorkshopEndpoints(app, e, inv)
 		registerInventoryEndpoints(app, e, inv, graph)
-		registerCompanyEndpoints(app, e, eco)
+		registerCompanyEndpoints(app, e, eco, graph)
 		registerEmployeesEndpoints(app, e, emp)
 		registerMachineEndpoints(app, e)
 		registerExplorationEndpoints(app, e)

@@ -3,6 +3,7 @@ package hooks
 import (
 	"fmt"
 	"math/rand"
+	"time"
 
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/apis"
@@ -75,8 +76,14 @@ func registerMachineHooks(app *pocketbase.PocketBase, inv *InventoryLogic, graph
 			}
 		}
 
-		// 4. SET INITIAL DURABILITY
-		record.Set("durability", float64(gamedata.MachineDurabilityOnPlace))
+		// 4. SET INITIAL DURABILITY AND START PRODUCTION (skip for storage)
+		// Storage items don't have durability or production, they just store
+		machineItem := gamedata.GetItem(machineItemId)
+		if machineItem != nil && machineItem.Type != gamedata.ItemTypeStockage {
+			record.Set("durability", float64(gamedata.MachineDurabilityOnPlace))
+			// Initialize production timestamp so machines start producing immediately
+			record.Set("production_started_at", time.Now())
+		}
 
 		// 5. ATOMIC: Check and Deduct Inventory using transaction
 		// This prevents race conditions when multiple machines are created simultaneously
@@ -112,6 +119,34 @@ func registerMachineHooks(app *pocketbase.PocketBase, inv *InventoryLogic, graph
 				return deductErr
 			}
 			return apis.NewBadRequestError("Erreur de transaction", txErr)
+		}
+
+		return e.Next()
+	})
+
+	// Hook to auto-start production when machine is placed
+	app.OnRecordAfterUpdateSuccess("machines").BindFunc(func(e *core.RecordEvent) error {
+		record := e.Record
+
+		// Check if machine was just placed (placed changed to true)
+		if record.GetBool("placed") {
+			// Check if production_started_at is not set
+			startedAt := record.GetDateTime("production_started_at")
+			if startedAt.Time().IsZero() {
+				// Skip storage items - they don't need production
+				machineItemId := record.GetString("machine_id")
+				machineItem := gamedata.GetItem(machineItemId)
+
+				if machineItem != nil && machineItem.Type != gamedata.ItemTypeStockage {
+					// Initialize production timestamp
+					record.Set("production_started_at", time.Now())
+					if err := app.Save(record); err != nil {
+						app.Logger().Error("[MACHINES] Failed to auto-start production", "err", err)
+					} else {
+						app.Logger().Info("[MACHINES] Auto-started production for placed machine", "machineId", record.Id)
+					}
+				}
+			}
 		}
 
 		return e.Next()

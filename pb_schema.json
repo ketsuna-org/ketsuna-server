@@ -1099,6 +1099,18 @@
             },
             {
                 "hidden": false,
+                "id": "number2458563977",
+                "max": null,
+                "min": null,
+                "name": "harvested",
+                "onlyInt": false,
+                "presentable": false,
+                "required": false,
+                "system": false,
+                "type": "number"
+            },
+            {
+                "hidden": false,
                 "id": "autodate2990389176",
                 "name": "created",
                 "onCreate": true,
@@ -1170,7 +1182,8 @@
                 "type": "select",
                 "values": [
                     "deposit",
-                    "machine"
+                    "machine",
+                    "storage"
                 ]
             },
             {
@@ -1198,7 +1211,8 @@
                 "type": "select",
                 "values": [
                     "company",
-                    "machine"
+                    "machine",
+                    "storage"
                 ]
             },
             {
@@ -1507,19 +1521,6 @@
                     "Echec",
                     "Succès"
                 ]
-            },
-            {
-                "cascadeDelete": false,
-                "collectionId": "pbc_3735627160",
-                "hidden": false,
-                "id": "relation_emp_exp",
-                "maxSelect": 1,
-                "minSelect": 0,
-                "name": "employee",
-                "presentable": false,
-                "required": false,
-                "system": false,
-                "type": "relation"
             },
             {
                 "hidden": false,

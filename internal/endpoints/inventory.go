@@ -23,8 +23,8 @@ func registerInventoryEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, 
 		}
 
 		data := struct {
-			ItemId   string `json:"itemId" form:"itemId"`
-			Quantity int    `json:"quantity" form:"quantity"`
+			ItemId   string  `json:"itemId" form:"itemId"`
+			Quantity float64 `json:"quantity" form:"quantity"`
 		}{}
 
 		if err := c.BindBody(&data); err != nil {
@@ -61,7 +61,7 @@ func registerInventoryEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, 
 				}
 			}
 
-			result, err := inv.SellInventory(txApp, companyId, data.ItemId, data.Quantity)
+			result, err := inv.SellInventory(txApp, companyId, data.ItemId, int(data.Quantity))
 			if err != nil {
 				return apis.NewBadRequestError(err.Error(), nil)
 			}
@@ -135,8 +135,9 @@ func registerInventoryEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, 
 			var resultRecord *core.Record
 
 			// 4. Handle Purchase based on Type
-			if item.Type == gamedata.ItemTypeMachine {
-				// Machines -> 'machines' collection
+			// Both Machine and Stockage types go to 'machines' collection (placeable)
+			if item.Type == gamedata.ItemTypeMachine || item.Type == gamedata.ItemTypeStockage {
+				// Machines & Storage -> 'machines' collection
 				machinesCollection, err := txApp.FindCollectionByNameOrId("machines")
 				if err != nil {
 					return err

@@ -34,6 +34,7 @@ func RegisterHooks(app *pocketbase.PocketBase, inv *InventoryLogic, eco *Economy
 	registerDepositHooks(app)
 	registerRecipeHooks(app)
 	registerMachineHooks(app, inv, graph)
+	RegisterEdgeRelationHooks(app) // Sync edges with machine/deposit fields
 	RegisterExplorationCron(app)
 
 	// Run data correction and initialization on startup

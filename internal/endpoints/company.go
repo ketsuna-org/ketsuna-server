@@ -12,7 +12,7 @@ import (
 )
 
 // registerCompanyEndpoints handles /api/company/* routes
-func registerCompanyEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, eco *hooks.EconomyLogic) {
+func registerCompanyEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, eco *hooks.EconomyLogic, graph *hooks.GraphEconomy) {
 
 	// POST /api/company/finance - Get company financial breakdown
 	e.Router.POST("/api/company/finance", func(c *core.RequestEvent) error {
@@ -54,6 +54,13 @@ func registerCompanyEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, ec
 		companyId := authRecord.GetString("active_company")
 		if companyId == "" {
 			return apis.NewBadRequestError("Aucune entreprise active", nil)
+		}
+
+		// Trigger Game Loop (Lazy Update)
+		if graph != nil {
+			if _, err := graph.CalculateCompanyInventory(companyId); err != nil {
+				app.Logger().Error("[ENERGY] Failed to update game loop", "err", err)
+			}
 		}
 
 		status, err := eco.CalculateEnergyStatus(companyId)

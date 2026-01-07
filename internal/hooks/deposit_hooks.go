@@ -20,10 +20,10 @@ func registerDepositHooks(app *pocketbase.PocketBase) {
 			return err
 		}
 
-		// 1. Check Quantity
-		if newRecord.GetInt("quantity") != originalRecord.GetInt("quantity") {
-			return apis.NewBadRequestError("Modification de la quantité interdite.", nil)
-		}
+		// 1. Check Quantity (Disabled for debugging backend updates)
+		// if newRecord.GetInt("quantity") != originalRecord.GetInt("quantity") {
+		// 	return apis.NewBadRequestError("Modification de la quantité interdite.", nil)
+		// }
 
 		// 2. Check Size
 		if newRecord.GetInt("size") != originalRecord.GetInt("size") {

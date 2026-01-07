@@ -29,7 +29,7 @@ var Recipes = map[string]Recipe{
 	// -------------------------------------------------------------------------
 	"wooden_plank_recipe": {
 		ID: "wooden_plank_recipe", Name: "Sciage du Bois",
-		OutputItem: "wooden_plank", OutputQuantity: 1, ProductionTime: 20,
+		OutputItem: "wooden_plank", OutputQuantity: 2, ProductionTime: 20,
 		RequiredTech: "basic_automation", MachineType: "sawmill",
 		Inputs: []RecipeIngredient{{ItemID: "wood", Quantity: 1}},
 		Icon:   "🪵 ",
