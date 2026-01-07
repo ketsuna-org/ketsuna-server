@@ -188,22 +188,28 @@ func registerDepositEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent) {
 			return apis.NewBadRequestError("Aucune ressource à récolter", nil)
 		}
 
-		resourceId := deposit.GetString("ressource")
+		// Check for "ressource_id" (new schema) then fallback to "ressource" (old schema)
+		resourceId := deposit.GetString("ressource_id")
+		if resourceId == "" {
+			resourceId = deposit.GetString("ressource")
+		}
+
 		if resourceId == "" {
 			return apis.NewBadRequestError("Type de ressource invalide", nil)
 		}
 
 		// Find or create inventory record
+		// Note: Inventory schema likely uses "item_id" based on graph_traversal.go usage
 		inventory, err := app.FindFirstRecordByFilter(
 			"inventory",
-			"company = '"+companyId+"' && item = '"+resourceId+"'",
+			"company = '"+companyId+"' && item_id = '"+resourceId+"'",
 		)
 		if err != nil {
 			// Create new inventory record
 			inventoryCollection, _ := app.FindCollectionByNameOrId("inventory")
 			inventory = core.NewRecord(inventoryCollection)
 			inventory.Set("company", companyId)
-			inventory.Set("item", resourceId)
+			inventory.Set("item_id", resourceId)
 			inventory.Set("quantity", harvested)
 		} else {
 			// Update existing

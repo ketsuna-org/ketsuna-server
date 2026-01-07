@@ -191,7 +191,7 @@ var Items = map[string]Item{
 	// -------------------------------------------------------------------------
 	"forestry_machine": {
 		ID: "forestry_machine", Name: "Exploitation Forestière", Type: ItemTypeMachine, Unit: UnitUnit,
-		BasePrice: 1042, Product: "wood", ProductQuantity: 15, ProductionTime: 120,
+		BasePrice: 1042, Product: "wood", ProductQuantity: 15, ProductionTime: 20,
 		MaxEmployee: 2, EnergyType: EnergyTypeManuel, Icon: "/icons/forestry_machine.png",
 	},
 	"basic_mining_machine": {

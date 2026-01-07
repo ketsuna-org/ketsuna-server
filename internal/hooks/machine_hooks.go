@@ -21,17 +21,19 @@ func registerMachineHooks(app *pocketbase.PocketBase, inv *InventoryLogic, graph
 	})
 
 	// Hook for Lazy Evaluation on List
-	// Caution: optimizing to avoid N+1 if listing many machines.
-	// But GraphEconomy handles individual nodes. N+1 is inherent to Graph traversal unless batched.
-	// For now, iterate and update.
-	app.OnRecordsListRequest("machines").BindFunc(func(e *core.RecordsListRequestEvent) error {
-		if graph != nil {
-			for _, rec := range e.Records {
-				graph.CalculateNodeFlow(rec.Id, "machine")
+	// REMOVED: Optimizing to avoid N+1 queries.
+	// GraphEconomy handles individual nodes updates via UI interaction or Global Tick.
+	// Listing all machines should purely be a DB fetch.
+	/*
+		app.OnRecordsListRequest("machines").BindFunc(func(e *core.RecordsListRequestEvent) error {
+			if graph != nil {
+				for _, rec := range e.Records {
+					graph.CalculateNodeFlow(rec.Id, "machine")
+				}
 			}
-		}
-		return e.Next()
-	})
+			return e.Next()
+		})
+	*/
 
 	app.OnRecordCreateRequest("machines").BindFunc(func(e *core.RecordRequestEvent) error {
 		record := e.Record
@@ -80,7 +82,6 @@ func registerMachineHooks(app *pocketbase.PocketBase, inv *InventoryLogic, graph
 		// Storage items don't have durability or production, they just store
 		machineItem := gamedata.GetItem(machineItemId)
 		if machineItem != nil && machineItem.Type != gamedata.ItemTypeStockage {
-			record.Set("durability", float64(gamedata.MachineDurabilityOnPlace))
 			// Initialize production timestamp so machines start producing immediately
 			record.Set("production_started_at", time.Now())
 		}

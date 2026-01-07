@@ -2,6 +2,7 @@ package hooks
 
 import (
 	"fmt"
+	"sync" // Added sync
 
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
@@ -11,26 +12,45 @@ import (
 const GraphHarvestInterval = 60.0
 
 type GraphEconomy struct {
-	app *pocketbase.PocketBase
+	app   *pocketbase.PocketBase
+	locks sync.Map // Map[string]*sync.Mutex for CompanyID
 }
 
 func NewGraphEconomy(app *pocketbase.PocketBase) *GraphEconomy {
-	return &GraphEconomy{app: app}
+	return &GraphEconomy{
+		app: app,
+		// locks auto-initialized
+	}
+}
+
+// getLock returns the mutex for a specific company
+func (g *GraphEconomy) getLock(companyId string) *sync.Mutex {
+	lock, _ := g.locks.LoadOrStore(companyId, &sync.Mutex{})
+	return lock.(*sync.Mutex)
 }
 
 // CalculateCompanyInventory triggers a pull for all resources flowing into the company
 // using the new GraphTraversal engine.
 func (g *GraphEconomy) CalculateCompanyInventory(companyId string) (map[string]float64, error) {
+	// CRITICAL: Lock to prevent Race Conditions (Double Harvesting) using Keyed Mutex
+	// Since TraverseGlobal advances time and consumes resources, concurrent calls (e.g. Tick + View)
+	// could process the same time delta twice if not serialized.
+	mu := g.getLock(companyId)
+	mu.Lock()
+	defer mu.Unlock()
+
 	gt := NewGraphTraversal(g.app)
 
 	// 1. Traverse Storages (Update Buffers)
+	// Note: TraverseStorages is a helper to ensure all storage buffers catch up if they are heavily used but not connected to company.
+	// But in Pull-model, we only care about what flows to Company OR what is requested.
+	// We keep it for consistency with old behavior of "updating everything".
 	if err := gt.TraverseStorages(companyId); err != nil {
 		g.app.Logger().Error("[GRAPH] TraverseStorages failed", "companyId", companyId, "err", err)
-		// Continue? Yes, sales should still happen.
 	}
 
-	// 2. Delegate to GraphTraversal for Sales
-	flow, err := gt.TraverseFromCompany(companyId)
+	// 2. Delegate to GraphTraversal for Sales (Global Pull)
+	flow, err := gt.TraverseGlobal(companyId)
 	if err != nil {
 		g.app.Logger().Error("[GRAPH] Traversal failed", "companyId", companyId, "err", err)
 		return nil, err
@@ -118,7 +138,8 @@ func (g *GraphEconomy) CalculateNodeFlow(nodeId string, nodeType string) (float6
 		gt.energyBalance = &EnergyBalance{Ratio: 1.0}
 	}
 
-	flow, err := gt.ProcessNode(nodeId, nodeType, "")
+	// Use TraverseTarget for local calculation
+	flow, err := gt.TraverseTarget(nodeId, nodeType)
 	if err != nil {
 		return 0, "", err
 	}
@@ -144,16 +165,25 @@ func (g *GraphEconomy) TriggerNodeUpdate(nodeId string) error {
 
 	// Update Storages
 	for _, storeId := range storages {
-		if _, err := gt.ProcessNode(storeId, "storage", ""); err != nil {
+		// Check local status of storage (Buffer Update)
+		if _, err := gt.TraverseTarget(storeId, "storage"); err != nil {
 			g.app.Logger().Error("[GRAPH] Trigger update failed for storage", "id", storeId, "err", err)
 		}
 	}
 
 	// Update Companies
 	for _, compId := range companies {
-		if _, err := gt.TraverseFromCompany(compId); err != nil {
-			g.app.Logger().Error("[GRAPH] Trigger update failed for company", "id", compId, "err", err)
-		}
+		// Also Lock here since we are calling TraverseGlobal
+		mu := g.getLock(compId)
+		mu.Lock()
+		// defer inside loop is risky if loop is long, but OK for small loops.
+		// Better style: func closure.
+		func() {
+			defer mu.Unlock()
+			if _, err := gt.TraverseGlobal(compId); err != nil {
+				g.app.Logger().Error("[GRAPH] Trigger update failed for company", "id", compId, "err", err)
+			}
+		}()
 	}
 
 	return nil

@@ -10,56 +10,9 @@ import (
 	"ketsuna.com/server/internal/gamedata"
 )
 
-// GraphTraversal handles the graph-based economy traversal
-type GraphTraversal struct {
-	app            *pocketbase.PocketBase
-	lazyCalc       *LazyCalculator
-	energyBalance  *EnergyBalance
-	visited        map[string]bool           // Prevent infinite loops
-	inventoryCache map[string]*core.Record   // Cache inventory by item_id
-	recordCache    map[string]*core.Record   // Cache fetched records by collection:id
-	employeeCache  map[string][]*core.Record // Cache employees by assignment (machineId -> employees)
-}
-
-// NewGraphTraversal creates a new graph traversal instance
-func NewGraphTraversal(app *pocketbase.PocketBase) *GraphTraversal {
-	return &GraphTraversal{
-		app:            app,
-		lazyCalc:       NewLazyCalculator(app),
-		visited:        make(map[string]bool),
-		inventoryCache: make(map[string]*core.Record),
-		recordCache:    make(map[string]*core.Record),
-		employeeCache:  make(map[string][]*core.Record),
-	}
-}
-
-// Helper: Get machine from cache or DB
-func (gt *GraphTraversal) getMachine(id string) (*core.Record, error) {
-	key := "machines:" + id
-	if rec, ok := gt.recordCache[key]; ok {
-		return rec, nil
-	}
-	rec, err := gt.app.FindRecordById("machines", id)
-	if err == nil {
-		gt.recordCache[key] = rec
-	}
-	return rec, err
-}
-
-// Helper: Get employees for machine from cache or DB
-func (gt *GraphTraversal) getMachineEmployees(machineId string) ([]*core.Record, error) {
-	if emps, ok := gt.employeeCache[machineId]; ok {
-		return emps, nil
-	}
-	// Fallback to DB if not pre-cached (shouldn't happen if Traverse is called correctly)
-	return gt.app.FindRecordsByFilter("employees", fmt.Sprintf("machine = '%s'", machineId), "", 0, 0)
-}
-
 // EnergyBalance represents the energy state for a company
 type EnergyBalance struct {
-	Available float64 // From generators + stored (buffer not included in available for consumption? )
-	// Actually Available usually means current power output.
-	// Stored is separate.
+	Available       float64 // From generators + stored
 	Demand          float64 // From active machines
 	Ratio           float64 // Available / Demand (0-1)
 	StoredEnergy    float64 // Sum of all machines with stored_energy
@@ -74,215 +27,454 @@ type NodeFlow struct {
 	NodeID   string
 }
 
-// FindSinks finds all downstream storage or company nodes from a given start node
-func (gt *GraphTraversal) FindSinks(startNodeId string) ([]string, []string, error) {
-	storageIds := make(map[string]bool)
-	companyIds := make(map[string]bool)
-	visited := make(map[string]bool)
-
-	var traverse func(string)
-	traverse = func(currentId string) {
-		if visited[currentId] {
-			return
-		}
-		visited[currentId] = true
-
-		// Find outgoing edges (where input_id = currentId)
-		edges, err := gt.app.FindRecordsByFilter(
-			"edge_relation",
-			fmt.Sprintf("input_id = '%s'", currentId),
-			"", 0, 0,
-		)
-		if err != nil {
-			return
-		}
-
-		for _, edge := range edges {
-			outType := edge.GetString("output_type")
-			outId := edge.GetString("output_id")
-
-			switch outType {
-			case "company":
-				companyIds[outId] = true
-			case "storage":
-				storageIds[outId] = true
-			case "machine":
-				// Recurse
-				traverse(outId)
-			}
-		}
-	}
-
-	traverse(startNodeId)
-
-	sIds := make([]string, 0, len(storageIds))
-	for id := range storageIds {
-		sIds = append(sIds, id)
-	}
-	cIds := make([]string, 0, len(companyIds))
-	for id := range companyIds {
-		cIds = append(cIds, id)
-	}
-
-	return sIds, cIds, nil
+type GraphTraversal struct {
+	app            *pocketbase.PocketBase
+	lazyCalc       *LazyCalculator
+	energyBalance  *EnergyBalance
+	visited        map[string]bool
+	inventoryCache map[string]*core.Record
+	recordCache    map[string]*core.Record
+	employeeCache  map[string][]*core.Record
+	edgeCache      map[string][]*core.Record // Cache: output_id -> incoming edges
 }
 
-// TraverseStorages iterates all storage nodes for the company to trigger buffering
-func (gt *GraphTraversal) TraverseStorages(companyId string) error {
-	// Find all storage machines for this company
-	machines, err := gt.app.FindRecordsByFilter("machines",
-		fmt.Sprintf("company = '%s'", companyId),
-		"", 0, 0)
-	if err != nil {
-		return err
+func NewGraphTraversal(app *pocketbase.PocketBase) *GraphTraversal {
+	return &GraphTraversal{
+		app:            app,
+		lazyCalc:       NewLazyCalculator(app),
+		visited:        make(map[string]bool),
+		inventoryCache: make(map[string]*core.Record),
+		recordCache:    make(map[string]*core.Record),
+		employeeCache:  make(map[string][]*core.Record),
+		edgeCache:      make(map[string][]*core.Record),
 	}
-
-	for _, mach := range machines {
-		gamedataId := mach.GetString("machine_id")
-		itemDef := gamedata.GetItem(gamedataId)
-		if itemDef != nil && itemDef.Type == gamedata.ItemTypeStockage {
-			// This is a storage node. Process it as a SINK (requestedBy = "").
-			gt.ProcessNode(mach.Id, "storage", "")
-		}
-	}
-	return nil
 }
 
-// TraverseFromCompany starts graph traversal from the company node
-// It pulls resources from all connected nodes
-func (gt *GraphTraversal) TraverseFromCompany(companyId string) (map[string]float64, error) {
-	totalFlow := make(map[string]float64)
+// --- CORE TRAVERSAL ---
+
+// TraverseGlobal performs a full recursive flow calculation starting from the company (Pull-based)
+func (gt *GraphTraversal) TraverseGlobal(companyId string) (map[string]float64, error) {
 	gt.visited = make(map[string]bool)
 	gt.inventoryCache = make(map[string]*core.Record)
 	gt.recordCache = make(map[string]*core.Record)
 	gt.employeeCache = make(map[string][]*core.Record)
+	gt.edgeCache = make(map[string][]*core.Record)
 
-	// OPIMIZATION 1: Pre-load company inventory
-	invRecords, _ := gt.app.FindRecordsByFilter("inventory",
-		fmt.Sprintf("company = '%s'", companyId), "", 0, 0)
+	// 1. Pre-loading (Optimisation)
+	gt.preloadData(companyId)
+
+	// 2. Energy Calculation
+	// Note: We need all machines for energy
+	allMachines := make([]*core.Record, 0)
+	for _, rec := range gt.recordCache {
+		if rec.Collection().Name == "machines" {
+			allMachines = append(allMachines, rec)
+		}
+	}
+	// If cache empty, fetch them (fallback)
+	if len(allMachines) == 0 {
+		allMachines, _ = gt.app.FindRecordsByFilter("machines", fmt.Sprintf("company = '%s'", companyId), "", 0, 0)
+	}
+
+	gt.UpdateGenerators(companyId, allMachines)
+	balance, _ := gt.CalculateEnergyBalance(companyId, allMachines)
+	gt.energyBalance = balance
+
+	// 3. Recursive Pull from Company Inputs
+	totalFlow := make(map[string]float64)
+	edgesToCompany := gt.edgeCache[companyId]
+
+	for _, edge := range edgesToCompany {
+		if edge.GetString("output_type") == "company" {
+			// Recursive call
+			flow, _ := gt.processNodeRecursive(edge.GetString("input_id"), edge.GetString("input_type"), companyId, true)
+			if flow.Quantity > 0 {
+				totalFlow[flow.ItemID] += flow.Quantity
+			}
+		}
+	}
+
+	// 4. Persistence
+	gt.AddFlowsToInventory(companyId, totalFlow)
+	return totalFlow, nil
+}
+
+// TraverseTarget performs a local update for a specific node (Targeted Mode)
+// It checks immediate inputs for availability but does NOT recurse further up.
+func (gt *GraphTraversal) TraverseTarget(nodeId, nodeType string) (*NodeFlow, error) {
+	// Initialize minimal cache for local context
+	gt.visited = make(map[string]bool)
+	gt.edgeCache = make(map[string][]*core.Record)
+
+	// Pre-fetch edges for this node only? Or standard pre-load?
+	// For responsiveness, we might want to query only what's needed.
+	// But simplest is to fetch edges for this node.
+
+	// Fetch incoming edges for this node
+	incomingEdges, _ := gt.app.FindRecordsByFilter("edge_relation", fmt.Sprintf("output_id='%s'", nodeId), "", 0, 0)
+	gt.edgeCache[nodeId] = incomingEdges
+
+	// We also need outgoing edges to know requirements if we were doing push,
+	// but here we are doing a local Pull or Check.
+
+	// For TraverseTarget, we assume we are "pulling" from this node to see what it *would* output.
+	// So we call processNodeRecursive with recursive=false
+	return gt.processNodeRecursive(nodeId, nodeType, "USER_INTERACTION", false)
+}
+
+func (gt *GraphTraversal) preloadData(companyId string) {
+	invRecords, _ := gt.app.FindRecordsByFilter("inventory", fmt.Sprintf("company = '%s'", companyId), "", 0, 0)
 	for _, rec := range invRecords {
 		gt.inventoryCache[rec.GetString("item_id")] = rec
 	}
 
-	// OPTIMIZATION 2: Pre-load all machines for the company
-	allMachines, err := gt.app.FindRecordsByFilter("machines",
-		fmt.Sprintf("company = '%s'", companyId), "", 0, 0)
-	if err == nil {
-		for _, m := range allMachines {
-			gt.recordCache["machines:"+m.Id] = m
-		}
+	// Load machines first
+	allMachines, _ := gt.app.FindRecordsByFilter("machines", fmt.Sprintf("company = '%s'", companyId), "", 0, 0)
+	var machineIds []interface{}
+	for _, m := range allMachines {
+		gt.recordCache["machines:"+m.Id] = m
+		machineIds = append(machineIds, m.Id)
 	}
 
-	// OPTIMIZATION 3: Pre-load all employees for the company
-	// Note: We need employees assigned to machines (employer = companyId and machine != "")
-	// For simplicity, just fetch all company employees
-	allEmployees, err := gt.app.FindRecordsByFilter("employees",
-		fmt.Sprintf("employer = '%s'", companyId), "", 0, 0)
-	if err == nil {
-		for _, emp := range allEmployees {
-			mId := emp.GetString("machine")
-			if mId != "" {
-				gt.employeeCache[mId] = append(gt.employeeCache[mId], emp)
-			}
-			dId := emp.GetString("deposit")
-			if dId != "" {
-				// We can also cache deposit employees if we want
-				// Using "deposits:"+dId prefix to avoid collision? No, map key is assignment ID.
-				// Since we use separate lookups for machine vs deposit, we can share map if keys are unique (UUIDs are unique).
-				gt.employeeCache[dId] = append(gt.employeeCache[dId], emp)
-			}
-		}
-	}
+	// Load nodes edges
+	// We only need edges where the destination is one of our machines (or the company)
+	// OR if the input is our deposit? (But deposit points to machine, so output_id = machine)
+	// So filtering by output_id IN (machines) covers the "Input -> Machine" links.
+	// Filtering by input_id IN (machines) covers "Machine -> Output" links.
 
-	// Update generators (consume fuel) - Pass pre-loaded machines
-	if err := gt.UpdateGenerators(companyId, allMachines); err != nil {
-		gt.app.Logger().Error("[GRAPH] Failed to update generators", "err", err)
-	}
-
-	// First, calculate energy balance for the entire company - Pass pre-loaded machines
-	energyBalance, err := gt.CalculateEnergyBalance(companyId, allMachines)
+	// Optimization: Fetch all edges for now (limit 1000).
+	// Using empty string "" for filter to match all.
+	allEdges, err := gt.app.FindRecordsByFilter("edge_relation", "", "", 1000, 0)
 	if err != nil {
-		return totalFlow, err
-	}
-	gt.energyBalance = energyBalance
-
-	gt.app.Logger().Info("[GRAPH] Starting company traversal",
-		"companyId", companyId,
-		"energyRatio", energyBalance.Ratio,
-		"energyAvailable", energyBalance.Available,
-		"energyDemand", energyBalance.Demand)
-
-	// Find all edges pointing TO the company
-	edges, err := gt.app.FindRecordsByFilter(
-		"edge_relation",
-		fmt.Sprintf("output_id = '%s' && output_type = 'company'", companyId),
-		"",
-		0,
-		0,
-	)
-	if err != nil {
-		return totalFlow, err
+		gt.app.Logger().Error("[GRAPH] Failed to load edges", "err", err)
 	}
 
-	gt.app.Logger().Info("[GRAPH] Found edges to company", "count", len(edges))
+	gt.app.Logger().Info("[GRAPH] Preload Edges", "count", len(allEdges))
 
-	// Process each incoming edge
-	for _, edge := range edges {
-		inputType := edge.GetString("input_type")
-		inputId := edge.GetString("input_id")
+	for _, edge := range allEdges {
+		outId := edge.GetString("output_id")
+		gt.edgeCache[outId] = append(gt.edgeCache[outId], edge)
 
-		flow, err := gt.ProcessNode(inputId, inputType, companyId)
-		if err != nil {
-			gt.app.Logger().Error("[GRAPH] Error processing node",
-				"nodeType", inputType,
-				"nodeId", inputId,
-				"err", err)
-			continue
-		}
-
-		if flow.Quantity > 0 && flow.ItemID != "" {
-			totalFlow[flow.ItemID] += flow.Quantity
-			gt.app.Logger().Info("[GRAPH] Flow from node",
-				"nodeType", inputType,
-				"nodeId", inputId,
-				"item", flow.ItemID,
-				"quantity", flow.Quantity)
+		// DEBUG: specific check for our machine
+		if outId == "eh9s9x7ouewqfsc" {
+			gt.app.Logger().Info("[GRAPH] Found edge for target machine", "edgeId", edge.Id, "inputId", edge.GetString("input_id"))
 		}
 	}
-
-	// Add all accumulated flows to company inventory
-	if err := gt.AddFlowsToInventory(companyId, totalFlow); err != nil {
-		gt.app.Logger().Error("[GRAPH] Failed to add flows to inventory", "err", err)
-	}
-
-	return totalFlow, nil
 }
 
-// ProcessNode processes a single node and returns its output
-func (gt *GraphTraversal) ProcessNode(nodeId, nodeType, requestedBy string) (*NodeFlow, error) {
+// processNodeRecursive is the core logic engine
+func (gt *GraphTraversal) processNodeRecursive(nodeId, nodeType, requestedBy string, recursive bool) (*NodeFlow, error) {
+	// Loop detection / Visited check (only for recursive mode?)
+	// Actually, even for non-recursive if we had loops in local check (unlikely but possible)
 	visitKey := fmt.Sprintf("%s:%s", nodeType, nodeId)
 	if gt.visited[visitKey] {
-		// gt.app.Logger().Warn("[GRAPH] Cycle detected, skipping", "node", visitKey) // Reduce log noise
+		// Return 0 flow if loop detected
 		return &NodeFlow{}, nil
 	}
 	gt.visited[visitKey] = true
 
 	switch nodeType {
 	case "deposit":
-		return gt.ProcessDeposit(nodeId, requestedBy)
+		// Deposits are always leaves in terms of resource flow, they don't consume items.
+		return gt.ProcessDeposit(nodeId, requestedBy, recursive)
 	case "machine":
-		return gt.ProcessMachine(nodeId, requestedBy)
+		return gt.ProcessMachine(nodeId, requestedBy, recursive)
 	case "storage":
-		return gt.ProcessStorage(nodeId, requestedBy)
-	default:
-		return &NodeFlow{}, fmt.Errorf("unknown node type: %s", nodeType)
+		return gt.ProcessStorage(nodeId, requestedBy, recursive)
 	}
+	return &NodeFlow{}, nil
 }
 
+// --- NODE HANDLERS ---
+
+func (gt *GraphTraversal) ProcessMachine(machineId, requestedBy string, recursive bool) (*NodeFlow, error) {
+	machine, err := gt.getMachine(machineId)
+	if err != nil || !machine.GetBool("placed") {
+		return &NodeFlow{}, err
+	}
+
+	itemDef := gamedata.GetItem(machine.GetString("machine_id"))
+	if itemDef == nil || (itemDef.ProduceEnergy > 0 && itemDef.Product == "") {
+		return &NodeFlow{}, nil
+	}
+
+	// Determine Output Item
+	outputItem := itemDef.Product
+	if outputItem == "" && itemDef.UseRecipe != "" {
+		if r := gamedata.GetRecipe(itemDef.UseRecipe); r != nil {
+			outputItem = r.OutputItem
+		}
+	}
+	if outputItem == "" {
+		return &NodeFlow{}, nil
+	}
+
+	// 1. Check Energy (Global constraint)
+	energyMult := 1.0
+	// Only apply energy constraints if we have an EnergyBalance (which might not be calculated in TargetMode)
+	if gt.energyBalance != nil && itemDef.NeedEnergy > 0 {
+		if gt.energyBalance.Ratio < 0.1 {
+			return &NodeFlow{ItemID: outputItem}, nil
+		}
+		energyMult = gt.energyBalance.Ratio
+	}
+
+	// 2. Calculate Theoretical Cycles (Time-based)
+	startedAt := machine.GetDateTime("production_started_at").Time()
+	if startedAt.IsZero() {
+		if recursive { // Only auto-start in global mode? Or always? Let's say always for consistency.
+			machine.Set("production_started_at", time.Now())
+			gt.app.Save(machine)
+		}
+		return &NodeFlow{ItemID: outputItem}, nil
+	}
+
+	delta := time.Since(startedAt).Seconds()
+	cycleTime := float64(itemDef.ProductionTime)
+	if cycleTime <= 0 {
+		cycleTime = 60
+	}
+
+	effectiveDelta := delta * energyMult
+	timeBasedCycles := int(math.Floor(effectiveDelta / cycleTime))
+	if timeBasedCycles < 1 {
+		return &NodeFlow{ItemID: outputItem}, nil
+	}
+
+	// 3. Check Inputs (The "Pull")
+	inputsReceived := make(map[string]float64)
+
+	if recursive {
+		// Traverse up to get inputs
+		for _, edge := range gt.edgeCache[machineId] {
+			flow, _ := gt.processNodeRecursive(edge.GetString("input_id"), edge.GetString("input_type"), machineId, true)
+			if flow.Quantity > 0 {
+				inputsReceived[flow.ItemID] += flow.Quantity
+			}
+		}
+	} else {
+		// "Targeted" mode: Check immediate availability.
+		// For Storage nodes: Check their current 'quantity' in DB/Cache (Snapshot)
+		// For Machine nodes: Harder. We might skip them or assume they have produced 0 for this 'tick' if not recursing.
+		// Specification says: "Mets à jour uniquement les entrées (inputs) directement adjacentes." aka "Calcul local".
+		for _, edge := range gt.edgeCache[machineId] {
+			// If input is Storage, we can peek at its inventory
+			if edge.GetString("input_type") == "storage" {
+				// We need to fetch the storage's inventory record
+				// Optimization: processNodeRecursive with recursive=false checks the storage snapshot.
+
+				flow, _ := gt.processNodeRecursive(edge.GetString("input_id"), edge.GetString("input_type"), machineId, false)
+				if flow.Quantity > 0 {
+					inputsReceived[flow.ItemID] += flow.Quantity
+				}
+			}
+			// If input is Machine, without recursion, we get 0 from it (it hasn't pushed anything).
+		}
+	}
+
+	// 4. Calculate Real Cycles (Resource-based)
+	maxCycles := timeBasedCycles
+
+	if itemDef.UseRecipe != "" {
+		recipe := gamedata.GetRecipe(itemDef.UseRecipe)
+		for _, input := range recipe.Inputs {
+			possible := int(inputsReceived[input.ItemID] / float64(input.Quantity))
+			if possible < maxCycles {
+				maxCycles = possible
+			}
+		}
+	} else {
+		// Extractor (1:1 with deposit)
+		// Note: inputsReceived contains flow from Deposit
+		// For Forestry Machine, outputItem is "wood".
+		// inputsReceived["wood"] comes from the Deposit processing.
+
+		available := inputsReceived[outputItem]
+		possible := int(available / 1.0)
+
+		if possible < maxCycles {
+			maxCycles = possible
+		}
+	}
+
+	if maxCycles < 1 {
+		// gt.app.Logger().Info("[GRAPH] ProcessMachine no cycles", "machine", machineId, "maxCycles", maxCycles, "inputs", inputsReceived)
+		return &NodeFlow{ItemID: outputItem}, nil
+	}
+
+	// 5. Commit Production & Consume Inputs (Active Extraction)
+	qtyPerCycle := float64(itemDef.ProductQuantity)
+	if qtyPerCycle <= 0 {
+		qtyPerCycle = 1
+	}
+	totalProduced := math.Round(float64(maxCycles)*qtyPerCycle*100) / 100
+
+	if recursive {
+		// Update timers only (Durability removed)
+		timeAdvanced := (float64(maxCycles) * cycleTime) / energyMult
+		machine.Set("production_started_at", startedAt.Add(time.Duration(timeAdvanced*float64(time.Second))))
+		gt.app.Save(machine)
+
+		// CONSUME INPUTS FROM DEPOSITS (Active Extraction)
+		// We need to iterate inputs again to find which one matches a deposit and consume it.
+		// NOTE: This logic assumes 'inputsReceived' was populated via Edge Traversal.
+		// But 'inputsReceived' is just a quantity map. We need the NodeID to update the DB.
+		// We have to iterate 'gt.edgeCache[machineId]' again.
+
+		for _, edge := range gt.edgeCache[machineId] {
+			inputType := edge.GetString("input_type")
+			inputId := edge.GetString("input_id")
+
+			if inputType == "deposit" {
+				// We found the deposit input.
+				// For Extractors (1:1), consumption is usually 1 * maxCycles?
+				// Or does an Extractor have an "Input Rate"?
+				// Forestry Machine (from items.go): Product: "wood". No UseRecipe.
+				// Implicitly consumes "wood" from "deposit".
+				// Rate: 1 input unit per cycle? Or per Item produced?
+				// Standard: 1 Cycle consumes 1 unit of Resource to produce X units of Product?
+				// User said: "Ont calcul combien chaque machine extrait... si une machine extrait 15 minérais, et qu'il en reste 3 alors la machine extrait seulement 3".
+				// "Extrait 15 minérais" -> This sounds like Output Quantity.
+				// Does 1 cycle consume 15 quantity from Deposit?
+				// OR does 1 cycle consume 1 quantity and produce 15?
+				// user: "Ont calcul combien chaque machine extrait... si une machine extrait 15 minérais..." -> IMPLIED: The extraction amount IS the consumption amount.
+				// Meaning: Consumption = TotalProduced.
+				// Let's assume Consumption = TotalProduced for now (1:1 extraction ratio).
+
+				consumed := totalProduced
+
+				// Re-fetch deposit to be safe (or use what we have if we cached it?)
+				// Better fetch fresh or update blindly with optimistic concurrency? PocketBase is simpler.
+				deposit, err := gt.app.FindRecordById("deposits", inputId)
+				if err == nil {
+					curQty := deposit.GetFloat("quantity")
+					newQty := curQty - consumed
+					if newQty < 0 {
+						newQty = 0 // Should not happen due to maxCycles clamping, but safety first
+					}
+
+					// Update Deposit
+					deposit.Set("quantity", math.Round(newQty))
+					gt.app.Save(deposit)
+
+					gt.app.Logger().Info("[GRAPH] Machine Consumed from Deposit", "machine", machineId, "deposit", inputId, "consumed", consumed, "left", newQty)
+				}
+			}
+		}
+	}
+
+	return &NodeFlow{ItemID: outputItem, Quantity: totalProduced, NodeType: "machine", NodeID: machineId}, nil
+}
+
+func (gt *GraphTraversal) ProcessStorage(storageId, requestedBy string, recursive bool) (*NodeFlow, error) {
+	gt.app.Logger().Info("[GRAPH] ProcessStorage called", "storage", storageId, "requestedBy", requestedBy, "recursive", recursive)
+
+	// Helper to find linked inventory
+	var inv *core.Record
+	invRecords, _ := gt.app.FindRecordsByFilter("inventory", fmt.Sprintf("linked_storage = '%s'", storageId), "", 1, 0)
+	if len(invRecords) == 0 {
+		gt.app.Logger().Warn("[GRAPH] ProcessStorage: No linked inventory found", "storage", storageId)
+		return &NodeFlow{}, nil
+	}
+	inv = invRecords[0]
+	itemId := inv.GetString("item_id")
+	gt.app.Logger().Info("[GRAPH] ProcessStorage: Found inventory", "storage", storageId, "item", itemId, "currentQty", inv.GetFloat("quantity"))
+
+	// Pull inputs from upstream nodes (machines, deposits)
+	if recursive {
+		inputFlow := 0.0
+		edges := gt.edgeCache[storageId]
+		gt.app.Logger().Info("[GRAPH] ProcessStorage: Edges to process", "storage", storageId, "edgeCount", len(edges))
+
+		for _, edge := range edges {
+			inputId := edge.GetString("input_id")
+			inputType := edge.GetString("input_type")
+			gt.app.Logger().Info("[GRAPH] ProcessStorage: Processing edge", "inputId", inputId, "inputType", inputType)
+
+			flow, err := gt.processNodeRecursive(inputId, inputType, storageId, true)
+			if err != nil {
+				gt.app.Logger().Error("[GRAPH] ProcessStorage: Error from input", "inputId", inputId, "err", err)
+			}
+			gt.app.Logger().Info("[GRAPH] ProcessStorage: Got flow from input", "inputId", inputId, "flowItem", flow.ItemID, "flowQty", flow.Quantity)
+
+			if flow.ItemID == itemId {
+				inputFlow += flow.Quantity
+			}
+		}
+		if inputFlow > 0 {
+			inv.Set("quantity", inv.GetFloat("quantity")+inputFlow)
+			gt.app.Save(inv)
+			gt.app.Logger().Info("[GRAPH] Storage received input", "storage", storageId, "item", itemId, "added", inputFlow, "total", inv.GetFloat("quantity"))
+		} else {
+			gt.app.Logger().Info("[GRAPH] ProcessStorage: No input flow received", "storage", storageId)
+		}
+	}
+
+	// Serve Request
+	currentQty := inv.GetFloat("quantity")
+	serveQty := 0.0
+
+	if requestedBy != "" && currentQty > 0 {
+		// How much is requested? The prompt implies "Flow".
+		// Since we don't transfer "Requests" with quantities yet (just "pull"),
+		// we assume we take EVERYTHING or a standard batch?
+		// Logic: "Aligner l'ensemble... sur la demande".
+		// But currently we don't pass a "RequiredAmount".
+		// We assume "Pull everything available".
+		serveQty = currentQty
+
+		if recursive {
+			inv.Set("quantity", 0) // Consumed by downstream
+			gt.app.Save(inv)
+		}
+	}
+
+	return &NodeFlow{ItemID: itemId, Quantity: serveQty, NodeType: "storage", NodeID: storageId}, nil
+}
+
+// --- HELPERS ---
+
+func (gt *GraphTraversal) AddFlowsToInventory(companyId string, flows map[string]float64) error {
+	for itemId, quantity := range flows {
+		if quantity <= 0 || itemId == "" {
+			continue
+		}
+
+		inv, ok := gt.inventoryCache[itemId]
+		if !ok {
+			collection, _ := gt.app.FindCollectionByNameOrId("inventory")
+			inv = core.NewRecord(collection)
+			inv.Set("company", companyId)
+			inv.Set("item_id", itemId)
+			inv.Set("quantity", 0)
+			gt.inventoryCache[itemId] = inv
+		}
+
+		inv.Set("quantity", inv.GetFloat("quantity")+quantity)
+		gt.app.Save(inv)
+	}
+	return nil
+}
+
+func (gt *GraphTraversal) getMachine(id string) (*core.Record, error) {
+	key := "machines:" + id
+	if rec, ok := gt.recordCache[key]; ok {
+		return rec, nil
+	}
+	rec, err := gt.app.FindRecordById("machines", id)
+	if err == nil {
+		gt.recordCache[key] = rec
+	}
+	return rec, err
+}
+
+// (Conserver les fonctions UpdateGenerators, CalculateEnergyBalance et ProcessDeposit de ton code original ici)
+
 // ProcessDeposit processes a deposit node
-func (gt *GraphTraversal) ProcessDeposit(depositId, requestedBy string) (*NodeFlow, error) {
+func (gt *GraphTraversal) ProcessDeposit(depositId, requestedBy string, recursive bool) (*NodeFlow, error) {
 	deposit, err := gt.app.FindRecordById("deposits", depositId)
 	if err != nil {
+		gt.app.Logger().Error("[GRAPH] ProcessDeposit: Deposit not found", "id", depositId)
 		return &NodeFlow{}, err
 	}
 
@@ -290,6 +482,14 @@ func (gt *GraphTraversal) ProcessDeposit(depositId, requestedBy string) (*NodeFl
 	resourceId := deposit.GetString("ressource_id")
 	if resourceId == "" {
 		return &NodeFlow{}, nil
+	}
+
+	// NOTE: Only mutate in recursive mode
+	if !recursive {
+		// Just estimate based on potential
+		// Simplified: return 0 or theoretical max?
+		// For availability check, we can return 1 if employees are present.
+		return &NodeFlow{ItemID: resourceId, Quantity: 0}, nil
 	}
 
 	lastHarvest := deposit.GetDateTime("last_harvest_at").Time()
@@ -304,502 +504,97 @@ func (gt *GraphTraversal) ProcessDeposit(depositId, requestedBy string) (*NodeFl
 	}
 
 	// Use Cache for employees
+
 	employees, err := gt.getMachineEmployees(depositId)
 	if err != nil {
+		gt.app.Logger().Error("[GRAPH] ProcessDeposit: Failed to get employees", "id", depositId, "err", err)
 		return &NodeFlow{}, err
 	}
 
-	// Calculate Total Effective Yield based on individual productivity
-	weightedYield := 0.0
-	// activeEmployees := 0
+	// PASSIVE MINING LOGIC (Employees on Deposit)
+	if len(employees) > 0 {
+		// Calculate Total Effective Yield based on individual productivity
+		weightedYield := 0.0
 
-	for _, emp := range employees {
-		// Calculate effective work seconds for this employee in the time window
-		effSeconds := gt.lazyCalc.CalculateEmployeeProductivity(emp, lastHarvest, now)
-
-		if effSeconds > 0 {
-			miningSkill := float64(emp.GetInt("mining"))
-			// Yield contribution per employee
-			weightedYield += miningSkill * effSeconds
-			// activeEmployees++
+		for _, emp := range employees {
+			// Calculate effective work seconds for this employee in the time window
+			effSeconds := gt.lazyCalc.CalculateEmployeeProductivity(emp, lastHarvest, now)
+			if effSeconds > 0 {
+				miningSkill := float64(emp.GetInt("mining"))
+				weightedYield += miningSkill * effSeconds
+			}
 		}
-	}
 
-	if weightedYield <= 0 {
+		if weightedYield > 0 {
+			// Yield = WeightedSkillSeconds / Interval
+			yield := weightedYield / GraphHarvestInterval
+
+			// Check deposit capacity
+			currentQty := deposit.GetFloat("quantity")
+			if yield > currentQty {
+				yield = currentQty
+			}
+
+			// FORCE INTEGER
+			yield = math.Floor(yield)
+
+			if yield > 0 {
+				currentHarvested := deposit.GetFloat("harvested")
+				newHarvested := currentHarvested + yield
+				newQuantity := currentQty - yield
+
+				// Ensure we are saving integer values
+				deposit.Set("harvested", math.Round(newHarvested))
+				deposit.Set("quantity", math.Round(newQuantity))
+				deposit.Set("last_harvest_at", now)
+
+				if err := gt.app.Save(deposit); err != nil {
+					gt.app.Logger().Error("[GRAPH] Failed to save deposit", "id", depositId, "err", err)
+				} else {
+					// gt.app.Logger().Info("[GRAPH] Deposit Passive Mine", "id", depositId, "yield", yield, "remaining", newQuantity)
+				}
+			} else {
+				// No yield but time passed, update timer
+				deposit.Set("last_harvest_at", now)
+				gt.app.Save(deposit)
+			}
+		} else {
+			// Update timer even if no effective work (e.g. paused/resting)
+			deposit.Set("last_harvest_at", now)
+			gt.app.Save(deposit)
+		}
+	} else {
+		// No employees: do not update last_harvest_at?
+		// Or do we? If we don't, next time they arrive they get "instant credit"?
+		// Strategy: Update it to "now" so they don't get free work.
+		// UNLESS the game design wants "offline progress" for unassigned periods? Unlikely.
+		// For simplicity/safety vs time jumps: Just update it.
+		// But earlier I said "don't update".
+		// Re-thinking: If no one is there, the resource sits there. Time passes.
+		// If I assign someone NOW, they start working FROM NOW.
+		// So `last_harvest_at` should be NOW.
+
+		// If I don't update it, and `last_harvest` was 1 hour ago.
+		// I assign someone. Next tick (1 sec later).
+		// Calc: now - last_harvest = 1 hour + 1 sec.
+		// Result: HUGE yield instantly.
+		// user request: "une 'itération' d'employé reste sur le Dépot".
+		// Implies we should prevent this exploit.
+		// FIX: Update timestamp even if no employees.
 		deposit.Set("last_harvest_at", now)
 		gt.app.Save(deposit)
-		return &NodeFlow{ItemID: resourceId, Quantity: 0}, nil
 	}
 
-	// Yield = WeightedSkillSeconds / Interval
-	yield := weightedYield / GraphHarvestInterval
-
-	// Check deposit capacity
-	currentQty := deposit.GetFloat("quantity")
-	if yield > currentQty {
-		yield = currentQty
-	}
-
-	yield = math.Round(yield*100) / 100
-
-	if yield <= 0 {
-		return &NodeFlow{ItemID: resourceId, Quantity: 0}, nil
-	}
-
-	currentHarvested := deposit.GetFloat("harvested")
-	newHarvested := currentHarvested + yield
-	newQuantity := currentQty - yield
-
-	deposit.Set("harvested", newHarvested)
-	deposit.Set("quantity", newQuantity)
-	deposit.Set("last_harvest_at", now)
-
-	if err := gt.app.Save(deposit); err != nil {
-		gt.app.Logger().Error("[GRAPH] Failed to save deposit", "id", depositId, "err", err)
-		return &NodeFlow{}, err
-	}
+	// RETURN AVAILABLE QUANTITY
+	// Machines need to know how much is LEFT to extract.
+	remainingQty := deposit.GetFloat("quantity")
 
 	return &NodeFlow{
 		ItemID:   resourceId,
-		Quantity: yield,
+		Quantity: remainingQty, // This is what's available for extraction
 		NodeType: "deposit",
 		NodeID:   depositId,
 	}, nil
-}
-
-// AddFlowsToInventory adds the accumulated flows to company inventory
-func (gt *GraphTraversal) AddFlowsToInventory(companyId string, flows map[string]float64) error {
-	if len(flows) == 0 {
-		return nil
-	}
-
-	for itemId, quantity := range flows {
-		if quantity <= 0 {
-			continue
-		}
-
-		// Find existing inventory record for this item
-		invRecords, err := gt.app.FindRecordsByFilter("inventory",
-			fmt.Sprintf("company = '%s' && item_id = '%s'", companyId, itemId),
-			"", 1, 0)
-
-		var inv *core.Record
-
-		if err == nil && len(invRecords) > 0 {
-			// Update existing
-			inv = invRecords[0]
-			currentQty := inv.GetFloat("quantity")
-			inv.Set("quantity", currentQty+quantity)
-		} else {
-			// Create new inventory record
-			collection, err := gt.app.FindCollectionByNameOrId("inventory")
-			if err != nil {
-				gt.app.Logger().Error("[GRAPH] Failed to find inventory collection", "err", err)
-				continue
-			}
-
-			inv = core.NewRecord(collection)
-			inv.Set("company", companyId)
-			inv.Set("item_id", itemId)
-			inv.Set("quantity", quantity)
-		}
-
-		// Save inventory
-		if err := gt.app.Save(inv); err != nil {
-			gt.app.Logger().Error("[GRAPH] Failed to save inventory",
-				"company", companyId,
-				"item", itemId,
-				"quantity", quantity,
-				"err", err)
-			continue
-		}
-
-		gt.app.Logger().Info("[GRAPH] Added to inventory",
-			"company", companyId,
-			"item", itemId,
-			"quantity", quantity)
-	}
-
-	return nil
-}
-
-// ProcessMachine processes a machine node
-func (gt *GraphTraversal) ProcessMachine(machineId, requestedBy string) (*NodeFlow, error) {
-	// USE CACHE via helper
-	machine, err := gt.getMachine(machineId)
-	if err != nil {
-		return &NodeFlow{}, err
-	}
-
-	gamedataId := machine.GetString("machine_id")
-	itemDef := gamedata.GetItem(gamedataId)
-	if itemDef == nil {
-		return &NodeFlow{}, fmt.Errorf("unknown gamedata id: %s", gamedataId)
-	}
-
-	// Skip storage machines (handled by ProcessStorage)
-	if itemDef.Type == gamedata.ItemTypeStockage {
-		return gt.ProcessStorage(machineId, requestedBy)
-	}
-
-	// Determine output item
-	outputItem := itemDef.Product
-	if outputItem == "" && itemDef.UseRecipe != "" {
-		recipe := gamedata.GetRecipe(itemDef.UseRecipe)
-		if recipe != nil {
-			outputItem = recipe.OutputItem
-		}
-	}
-
-	// Check if this is an energy generator
-	isEnergyGenerator := itemDef.ProduceEnergy > 0 && outputItem == ""
-
-	if outputItem == "" && !isEnergyGenerator {
-		return &NodeFlow{}, nil
-	}
-
-	durability := machine.GetFloat("durability")
-	energyMultiplier := 1.0
-
-	// Safety check
-	if gt.energyBalance == nil {
-		// Should not happen if called correctly
-		gt.energyBalance = &EnergyBalance{Ratio: 1.0, Available: 1000}
-	}
-
-	if itemDef.NeedEnergy > 0 && gt.energyBalance.Ratio < 0.1 {
-		return &NodeFlow{ItemID: outputItem, Quantity: 0}, nil
-	}
-	if itemDef.NeedEnergy > 0 {
-		energyMultiplier = gt.energyBalance.Ratio
-	}
-
-	// === PRODUCTION LOGIC ===
-	startedAtVal := machine.GetDateTime("production_started_at")
-	startedAt := startedAtVal.Time()
-	now := time.Now()
-
-	if startedAt.IsZero() {
-		machine.Set("production_started_at", now)
-		if durability == 0 {
-			machine.Set("durability", float64(gamedata.MachineDurabilityOnPlace))
-		}
-		gt.app.Save(machine)
-		return &NodeFlow{ItemID: outputItem, Quantity: 0}, nil
-	}
-
-	// 1. Maintain (Repair) first - USE CACHE
-	employees, err := gt.getMachineEmployees(machineId)
-	if err == nil && len(employees) > 0 {
-		repairedDurability := gt.lazyCalc.CalculateMachineDurability(durability, startedAt, employees)
-		if repairedDurability > durability {
-			durability = repairedDurability
-			machine.Set("durability", durability)
-			gt.app.Logger().Info("[GRAPH] Maintenance applied", "machineId", machineId, "newDurability", durability)
-		}
-	}
-
-	if durability <= 0 {
-		machine.Set("production_started_at", now)
-		gt.app.Save(machine)
-		return &NodeFlow{ItemID: outputItem, Quantity: 0}, nil
-	}
-
-	delta := now.Sub(startedAt).Seconds()
-	if delta < 1.0 {
-		return &NodeFlow{ItemID: outputItem, Quantity: 0}, nil
-	}
-
-	cycleTime := float64(itemDef.ProductionTime)
-	if cycleTime <= 0 {
-		cycleTime = float64(gamedata.DefaultHarvestCycle)
-	}
-
-	// Effective time = Delta * PowerRatio
-	effectiveDelta := delta * energyMultiplier
-
-	// Potential cycles based on time and machine power
-	cyclesCompleted := int(math.Floor(effectiveDelta / cycleTime))
-	if cyclesCompleted < 1 {
-		return &NodeFlow{ItemID: outputItem, Quantity: 0}, nil
-	}
-
-	// Cap cycles by durability
-	if float64(cyclesCompleted) > durability {
-		cyclesCompleted = int(durability)
-	}
-	if cyclesCompleted < 1 {
-		machine.Set("production_started_at", now)
-		gt.app.Save(machine)
-		return &NodeFlow{ItemID: outputItem, Quantity: 0}, nil
-	}
-
-	// Calculate max possible cycles based on Inputs (Recipe)
-	maxPossibleCycles := cyclesCompleted
-
-	if itemDef.UseRecipe != "" {
-		recipe := gamedata.GetRecipe(itemDef.UseRecipe)
-		if recipe != nil {
-			// Find inputs from edges - Not perfectly cached yet, but finding edges is fast enough (indexed)
-			// Optimizaion: We could cache edges too?
-			incomingEdges, _ := gt.app.FindRecordsByFilter(
-				"edge_relation",
-				fmt.Sprintf("output_id = '%s' && output_type = 'machine'", machineId),
-				"", 0, 0,
-			)
-
-			// Pull inputs
-			inputsReceived := make(map[string]float64)
-			for _, edge := range incomingEdges {
-				inType := edge.GetString("input_type")
-				inId := edge.GetString("input_id")
-				flow, _ := gt.ProcessNode(inId, inType, machineId)
-				if flow.Quantity > 0 {
-					inputsReceived[flow.ItemID] += flow.Quantity
-				}
-			}
-
-			// Determine actual cycles based on inputs
-			limitCycles := cyclesCompleted
-			for _, input := range recipe.Inputs {
-				has := inputsReceived[input.ItemID]
-				neededPerCycle := float64(input.Quantity)
-				possible := int(has / neededPerCycle)
-				if possible < limitCycles {
-					limitCycles = possible
-				}
-			}
-			maxPossibleCycles = limitCycles
-		}
-	} else if itemDef.Product != "" {
-		// EXTRACTOR LOGIC: No recipe, but has a product (e.g. Iron Ore, Wood)
-		// We must check if it's connected to a deposit and consume from it.
-		// Enforce: Must have input (deposit) to produce.
-		maxPossibleCycles = 0 // Default to 0 if no input found
-
-		incomingEdges, _ := gt.app.FindRecordsByFilter(
-			"edge_relation",
-			fmt.Sprintf("output_id = '%s' && output_type = 'machine'", machineId),
-			"", 0, 0,
-		)
-
-		if len(incomingEdges) > 0 {
-			// It has inputs (likely a deposit)
-			// We need to pull from them ensuring we can produce 'ProductQuantity' per cycle.
-			inputsReceived := make(map[string]float64)
-			baseQty := float64(itemDef.ProductQuantity)
-			if baseQty <= 0 {
-				baseQty = 1
-			}
-
-			// For extractors, we consume 1 unit of NodeFlow (Deposit Yield) to produce 1 Unit of Product?
-			// Usually: Deposit yields "Iron Ore", Machine produces "Iron Ore". 1 to 1.
-			// Or: Deposit yields "Raw Resource", Machine "Refines"?
-			// In this game: Deposit = "iron_ore". Machine Product = "iron_ore".
-			// So 1 produced = 1 consumed from deposit.
-
-			for _, edge := range incomingEdges {
-				inType := edge.GetString("input_type")
-				inId := edge.GetString("input_id")
-				flow, _ := gt.ProcessNode(inId, inType, machineId)
-				if flow.Quantity > 0 {
-					inputsReceived[flow.ItemID] += flow.Quantity
-				}
-			}
-
-			// Limit cycles based on deposit yield
-			// Needed per cycle = ProductQuantity
-			limitCycles := cyclesCompleted
-
-			// We only care about the item we are producing (or any input?)
-			// Extractors usually only have 1 input.
-			// Let's sum all inputs matching the product ID?
-			// Actually, the deposit item ID matches the product ID.
-			available := inputsReceived[itemDef.Product]
-
-			// If we got nothing matching the product, maybe it's a "transformer"?
-			// But here we are in "No Recipe" block.
-			// Note: If inputsReceived is empty but we found edges, it means flow was 0 (empty deposit).
-
-			neededPerCycle := baseQty
-			possible := int(available / neededPerCycle)
-
-			if possible < limitCycles {
-				limitCycles = possible
-			}
-			maxPossibleCycles = limitCycles
-		}
-	}
-
-	if maxPossibleCycles < 1 {
-		machine.Set("production_started_at", now)
-		gt.app.Save(machine)
-		return &NodeFlow{ItemID: outputItem, Quantity: 0}, nil
-	}
-
-	cyclesCompleted = maxPossibleCycles
-
-	// Calculate Output Quantity
-	baseQty := float64(itemDef.ProductQuantity)
-	if itemDef.UseRecipe != "" {
-		recipe := gamedata.GetRecipe(itemDef.UseRecipe)
-		if recipe != nil {
-			baseQty = float64(recipe.OutputQuantity)
-		}
-	}
-	if baseQty <= 0 {
-		baseQty = 1
-	}
-
-	totalProduced := float64(cyclesCompleted) * baseQty
-
-	// Calculate Employee Bonus
-	if len(employees) > 0 {
-		totalSkillSeconds := 0.0
-		for _, emp := range employees {
-			effSeconds := gt.lazyCalc.CalculateEmployeeProductivity(emp, startedAt, now)
-			skill := float64(emp.GetInt("mining"))
-			totalSkillSeconds += skill * effSeconds
-		}
-
-		usedSeconds := float64(cyclesCompleted) * cycleTime
-		ratio := 1.0
-		if effectiveDelta > 0 {
-			ratio = usedSeconds / effectiveDelta
-		}
-
-		// Apply boost
-		boostCycles := (energyMultiplier * totalSkillSeconds * ratio / 10.0) / cycleTime
-		totalProduced += boostCycles * baseQty
-	}
-
-	totalProduced = math.Round(totalProduced*100) / 100
-
-	// Update Durability
-	durabilityLoss := float64(cyclesCompleted)
-	machine.Set("durability", durability-durabilityLoss)
-
-	// Update Timestamp
-	timeAdvanced := (float64(cyclesCompleted) * cycleTime) / energyMultiplier
-	newStart := startedAt.Add(time.Duration(timeAdvanced * float64(time.Second)))
-	machine.Set("production_started_at", newStart)
-
-	if err := gt.app.Save(machine); err != nil {
-		return &NodeFlow{}, err
-	}
-
-	gt.app.Logger().Info("[GRAPH] Machine produced",
-		"machineId", machineId,
-		"item", outputItem,
-		"qty", totalProduced,
-		"cycles", cyclesCompleted,
-	)
-
-	return &NodeFlow{
-		ItemID:   outputItem,
-		Quantity: totalProduced,
-		NodeType: "machine",
-		NodeID:   machineId,
-	}, nil
-}
-
-// ProcessStorage processes a storage node
-// Storages are special machines or inventory points.
-// We expect them to act as buffers: Pull Input -> Store -> Push Output.
-func (gt *GraphTraversal) ProcessStorage(storageId, requestedBy string) (*NodeFlow, error) {
-	// 1. Pull from inputs into storage inv
-	incomingEdges, _ := gt.app.FindRecordsByFilter(
-		"edge_relation",
-		fmt.Sprintf("output_id = '%s' && output_type = 'storage'", storageId),
-		"", 0, 0,
-	)
-
-	pulled := make(map[string]float64)
-	for _, edge := range incomingEdges {
-		inType := edge.GetString("input_type")
-		inId := edge.GetString("input_id")
-		flow, _ := gt.ProcessNode(inId, inType, storageId)
-		if flow.Quantity > 0 {
-			pulled[flow.ItemID] += flow.Quantity
-		}
-	}
-
-	// 2. Add pulled to inventory
-	// Find inventory record linked to this storage
-	invRecords, _ := gt.app.FindRecordsByFilter(
-		"inventory",
-		fmt.Sprintf("linked_storage = '%s'", storageId),
-		"", 1, 0,
-	)
-
-	var inv *core.Record
-	if len(invRecords) > 0 {
-		inv = invRecords[0]
-	} else {
-		// If we have stuff to store, create record
-		if len(pulled) > 0 {
-			// Find company from machine
-			mach, _ := gt.app.FindRecordById("machines", storageId)
-			companyId := ""
-			if mach != nil {
-				companyId = mach.GetString("company")
-			}
-
-			collection, _ := gt.app.FindCollectionByNameOrId("inventory")
-			inv = core.NewRecord(collection)
-			inv.Set("company", companyId)
-			inv.Set("linked_storage", storageId)
-			// Assuming single item type storage for now or picking first
-			for id := range pulled {
-				inv.Set("item_id", id)
-				break
-			}
-		}
-	}
-
-	if inv != nil {
-		// Update Quantity
-		itemId := inv.GetString("item_id")
-		qty := inv.GetFloat("quantity")
-
-		if amt, ok := pulled[itemId]; ok {
-			qty += amt
-			inv.Set("quantity", qty)
-			gt.app.Save(inv)
-		}
-
-		// Return available quantity
-		// ONLY drain if requestedBy is set (Pulled by Machine or Company)
-		// If requestedBy is empty, we are in SINK mode (just updating buffering), so we keep it.
-		if requestedBy != "" {
-			total := inv.GetFloat("quantity")
-			if total > 0 {
-				inv.Set("quantity", 0)
-				gt.app.Save(inv)
-				return &NodeFlow{ItemID: itemId, Quantity: total, NodeType: "storage", NodeID: storageId}, nil
-			}
-		} else {
-			// SINK MODE: We just accumulated.
-			// Return 0 flow so we don't duplicate it upstream if we were somehow called?
-			// Actually if requestedBy is empty, the return value is likely ignored or logged.
-			// But for safety, return 0.
-			return &NodeFlow{ItemID: itemId, Quantity: 0, NodeType: "storage", NodeID: storageId}, nil
-		}
-	}
-
-	return &NodeFlow{}, nil
-}
-
-// checkFuelAvailable checks if company has fuel for generator using cache
-func (gt *GraphTraversal) checkFuelAvailable(_ string, fuelItems []string) bool {
-	for _, item := range fuelItems {
-		if rec, ok := gt.inventoryCache[item]; ok {
-			if rec.GetFloat("quantity") > 0 {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // CalculateEnergyBalance calculates the company's energy state
@@ -976,4 +771,88 @@ func (gt *GraphTraversal) UpdateGenerators(companyId string, optMachines []*core
 		}
 	}
 	return nil
+}
+
+// getMachineEmployees retrieves employees assigned to a machine from cache or DB
+func (gt *GraphTraversal) getMachineEmployees(machineId string) ([]*core.Record, error) {
+	if emps, ok := gt.employeeCache[machineId]; ok {
+		return emps, nil
+	}
+	return gt.app.FindRecordsByFilter("employees", fmt.Sprintf("machine = '%s'", machineId), "", 0, 0)
+}
+
+// checkFuelAvailable checks if company has fuel for generator using cache
+func (gt *GraphTraversal) checkFuelAvailable(_ string, fuelItems []string) bool {
+	for _, item := range fuelItems {
+		if rec, ok := gt.inventoryCache[item]; ok {
+			if rec.GetFloat("quantity") > 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// TraverseStorages iterates all storage nodes for the company to trigger buffering
+func (gt *GraphTraversal) TraverseStorages(companyId string) error {
+	machines, err := gt.app.FindRecordsByFilter("machines",
+		fmt.Sprintf("company = '%s'", companyId),
+		"", 0, 0)
+	if err != nil {
+		return err
+	}
+
+	for _, mach := range machines {
+		gamedataId := mach.GetString("machine_id")
+		itemDef := gamedata.GetItem(gamedataId)
+		if itemDef != nil && itemDef.Type == gamedata.ItemTypeStockage && mach.GetBool("placed") {
+			// Process as storage/sink (Recursive=true because this is a maintenance task usually)
+			gt.ProcessStorage(mach.Id, "", true)
+		}
+	}
+	return nil
+}
+
+// FindSinks finds all downstream storage or company nodes from a given start node
+func (gt *GraphTraversal) FindSinks(startNodeId string) ([]string, []string, error) {
+	storageIds := make(map[string]bool)
+	companyIds := make(map[string]bool)
+	visited := make(map[string]bool)
+
+	var traverse func(string)
+	traverse = func(currentId string) {
+		if visited[currentId] {
+			return
+		}
+		visited[currentId] = true
+
+		// Find outgoing edges using edgeCache
+		edges := gt.edgeCache[currentId]
+		for _, edge := range edges {
+			outType := edge.GetString("output_type")
+			outId := edge.GetString("output_id")
+
+			switch outType {
+			case "company":
+				companyIds[outId] = true
+			case "storage":
+				storageIds[outId] = true
+			case "machine":
+				traverse(outId)
+			}
+		}
+	}
+
+	traverse(startNodeId)
+
+	sIds := make([]string, 0, len(storageIds))
+	for id := range storageIds {
+		sIds = append(sIds, id)
+	}
+	cIds := make([]string, 0, len(companyIds))
+	for id := range companyIds {
+		cIds = append(cIds, id)
+	}
+
+	return sIds, cIds, nil
 }
