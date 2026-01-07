@@ -358,12 +358,30 @@ func registerInventoryEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, 
 			return apis.NewBadRequestError("Erreur lors du calcul de production", err)
 		}
 
-		app.Logger().Info("[REFRESH] Lazy calculation completed", "company", companyId, "producedItems", len(producedItems))
+		// Also fetch storage inventories (items buffered in storage nodes)
+		storageInvRecords, _ := app.FindRecordsByFilter("inventory",
+			fmt.Sprintf("company = '%s' && linked_storage != ''", companyId), "", 0, 0)
+
+		storageInventory := make(map[string]interface{})
+		for _, inv := range storageInvRecords {
+			storageId := inv.GetString("linked_storage")
+			itemId := inv.GetString("item_id")
+			quantity := inv.GetFloat("quantity")
+
+			storageInventory[storageId] = map[string]interface{}{
+				"item_id":    itemId,
+				"quantity":   quantity,
+				"storage_id": storageId,
+			}
+		}
+
+		app.Logger().Info("[REFRESH] Lazy calculation completed", "company", companyId, "producedItems", len(producedItems), "storageItems", len(storageInventory))
 
 		return c.JSON(200, map[string]interface{}{
-			"success":       true,
-			"producedItems": producedItems,
-			"message":       fmt.Sprintf("%d type(s) d'items produits", len(producedItems)),
+			"success":          true,
+			"producedItems":    producedItems,
+			"storageInventory": storageInventory,
+			"message":          fmt.Sprintf("%d type(s) d'items produits, %d stockages", len(producedItems), len(storageInventory)),
 		})
 	}).Bind(apis.RequireAuth())
 }

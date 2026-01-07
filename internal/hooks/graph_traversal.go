@@ -164,14 +164,19 @@ func (gt *GraphTraversal) preloadData(companyId string) {
 
 // processNodeRecursive is the core logic engine
 func (gt *GraphTraversal) processNodeRecursive(nodeId, nodeType, requestedBy string, recursive bool) (*NodeFlow, error) {
-	// Loop detection / Visited check (only for recursive mode?)
-	// Actually, even for non-recursive if we had loops in local check (unlikely but possible)
+	// Loop detection / Visited check
+	// Storage nodes can be queried multiple times (they're buffers)
+	// But production nodes (machines, deposits) should only produce once per traversal
 	visitKey := fmt.Sprintf("%s:%s", nodeType, nodeId)
-	if gt.visited[visitKey] {
-		// Return 0 flow if loop detected
-		return &NodeFlow{}, nil
+
+	// For storage: always allow entry, but track if we already pulled from upstream
+	// For other nodes: standard visited check prevents re-processing
+	if nodeType != "storage" {
+		if gt.visited[visitKey] {
+			return &NodeFlow{}, nil
+		}
+		gt.visited[visitKey] = true
 	}
-	gt.visited[visitKey] = true
 
 	switch nodeType {
 	case "deposit":
@@ -188,13 +193,17 @@ func (gt *GraphTraversal) processNodeRecursive(nodeId, nodeType, requestedBy str
 // --- NODE HANDLERS ---
 
 func (gt *GraphTraversal) ProcessMachine(machineId, requestedBy string, recursive bool) (*NodeFlow, error) {
+	gt.app.Logger().Info("[GRAPH] ProcessMachine called", "machine", machineId, "requestedBy", requestedBy, "recursive", recursive)
+
 	machine, err := gt.getMachine(machineId)
 	if err != nil || !machine.GetBool("placed") {
+		gt.app.Logger().Info("[GRAPH] ProcessMachine: Not placed or error", "machine", machineId, "err", err)
 		return &NodeFlow{}, err
 	}
 
 	itemDef := gamedata.GetItem(machine.GetString("machine_id"))
 	if itemDef == nil || (itemDef.ProduceEnergy > 0 && itemDef.Product == "") {
+		gt.app.Logger().Info("[GRAPH] ProcessMachine: No itemDef or energy-only", "machine", machineId)
 		return &NodeFlow{}, nil
 	}
 
@@ -206,6 +215,7 @@ func (gt *GraphTraversal) ProcessMachine(machineId, requestedBy string, recursiv
 		}
 	}
 	if outputItem == "" {
+		gt.app.Logger().Info("[GRAPH] ProcessMachine: No output item", "machine", machineId)
 		return &NodeFlow{}, nil
 	}
 
@@ -214,6 +224,7 @@ func (gt *GraphTraversal) ProcessMachine(machineId, requestedBy string, recursiv
 	// Only apply energy constraints if we have an EnergyBalance (which might not be calculated in TargetMode)
 	if gt.energyBalance != nil && itemDef.NeedEnergy > 0 {
 		if gt.energyBalance.Ratio < 0.1 {
+			gt.app.Logger().Info("[GRAPH] ProcessMachine: Low energy ratio", "machine", machineId, "ratio", gt.energyBalance.Ratio)
 			return &NodeFlow{ItemID: outputItem}, nil
 		}
 		energyMult = gt.energyBalance.Ratio
@@ -221,10 +232,13 @@ func (gt *GraphTraversal) ProcessMachine(machineId, requestedBy string, recursiv
 
 	// 2. Calculate Theoretical Cycles (Time-based)
 	startedAt := machine.GetDateTime("production_started_at").Time()
+	gt.app.Logger().Info("[GRAPH] ProcessMachine: Production timer", "machine", machineId, "startedAt", startedAt, "isZero", startedAt.IsZero())
+
 	if startedAt.IsZero() {
 		if recursive { // Only auto-start in global mode? Or always? Let's say always for consistency.
 			machine.Set("production_started_at", time.Now())
 			gt.app.Save(machine)
+			gt.app.Logger().Info("[GRAPH] ProcessMachine: Started production timer", "machine", machineId)
 		}
 		return &NodeFlow{ItemID: outputItem}, nil
 	}
@@ -237,7 +251,10 @@ func (gt *GraphTraversal) ProcessMachine(machineId, requestedBy string, recursiv
 
 	effectiveDelta := delta * energyMult
 	timeBasedCycles := int(math.Floor(effectiveDelta / cycleTime))
+	gt.app.Logger().Info("[GRAPH] ProcessMachine: Cycle calculation", "machine", machineId, "delta", delta, "cycleTime", cycleTime, "timeBasedCycles", timeBasedCycles)
+
 	if timeBasedCycles < 1 {
+		gt.app.Logger().Info("[GRAPH] ProcessMachine: Not enough time for a cycle", "machine", machineId)
 		return &NodeFlow{ItemID: outputItem}, nil
 	}
 
@@ -275,6 +292,14 @@ func (gt *GraphTraversal) ProcessMachine(machineId, requestedBy string, recursiv
 	// 4. Calculate Real Cycles (Resource-based)
 	maxCycles := timeBasedCycles
 
+	// Cap at reasonable max per tick to prevent resource hogging
+	// This ensures fair sharing between multiple machines pulling from same storage
+	const maxCyclesPerTick = 3
+	if maxCycles > maxCyclesPerTick {
+		maxCycles = maxCyclesPerTick
+		gt.app.Logger().Info("[GRAPH] ProcessMachine: Capped cycles", "machine", machineId, "timeBasedCycles", timeBasedCycles, "capped", maxCyclesPerTick)
+	}
+
 	if itemDef.UseRecipe != "" {
 		recipe := gamedata.GetRecipe(itemDef.UseRecipe)
 		for _, input := range recipe.Inputs {
@@ -298,7 +323,7 @@ func (gt *GraphTraversal) ProcessMachine(machineId, requestedBy string, recursiv
 	}
 
 	if maxCycles < 1 {
-		// gt.app.Logger().Info("[GRAPH] ProcessMachine no cycles", "machine", machineId, "maxCycles", maxCycles, "inputs", inputsReceived)
+		gt.app.Logger().Info("[GRAPH] ProcessMachine: No cycles possible", "machine", machineId, "inputs", inputsReceived)
 		return &NodeFlow{ItemID: outputItem}, nil
 	}
 
@@ -315,49 +340,58 @@ func (gt *GraphTraversal) ProcessMachine(machineId, requestedBy string, recursiv
 		machine.Set("production_started_at", startedAt.Add(time.Duration(timeAdvanced*float64(time.Second))))
 		gt.app.Save(machine)
 
-		// CONSUME INPUTS FROM DEPOSITS (Active Extraction)
-		// We need to iterate inputs again to find which one matches a deposit and consume it.
-		// NOTE: This logic assumes 'inputsReceived' was populated via Edge Traversal.
-		// But 'inputsReceived' is just a quantity map. We need the NodeID to update the DB.
-		// We have to iterate 'gt.edgeCache[machineId]' again.
-
+		// CONSUME INPUTS FROM SOURCES (Deposits, Storage)
 		for _, edge := range gt.edgeCache[machineId] {
 			inputType := edge.GetString("input_type")
 			inputId := edge.GetString("input_id")
 
-			if inputType == "deposit" {
-				// We found the deposit input.
-				// For Extractors (1:1), consumption is usually 1 * maxCycles?
-				// Or does an Extractor have an "Input Rate"?
-				// Forestry Machine (from items.go): Product: "wood". No UseRecipe.
-				// Implicitly consumes "wood" from "deposit".
-				// Rate: 1 input unit per cycle? Or per Item produced?
-				// Standard: 1 Cycle consumes 1 unit of Resource to produce X units of Product?
-				// User said: "Ont calcul combien chaque machine extrait... si une machine extrait 15 minérais, et qu'il en reste 3 alors la machine extrait seulement 3".
-				// "Extrait 15 minérais" -> This sounds like Output Quantity.
-				// Does 1 cycle consume 15 quantity from Deposit?
-				// OR does 1 cycle consume 1 quantity and produce 15?
-				// user: "Ont calcul combien chaque machine extrait... si une machine extrait 15 minérais..." -> IMPLIED: The extraction amount IS the consumption amount.
-				// Meaning: Consumption = TotalProduced.
-				// Let's assume Consumption = TotalProduced for now (1:1 extraction ratio).
+			switch inputType {
+			case "deposit":
+				// Consume from Deposit (for extractors)
+				consumed := totalProduced // 1:1 extraction ratio
 
-				consumed := totalProduced
-
-				// Re-fetch deposit to be safe (or use what we have if we cached it?)
-				// Better fetch fresh or update blindly with optimistic concurrency? PocketBase is simpler.
 				deposit, err := gt.app.FindRecordById("deposits", inputId)
 				if err == nil {
 					curQty := deposit.GetFloat("quantity")
 					newQty := curQty - consumed
 					if newQty < 0 {
-						newQty = 0 // Should not happen due to maxCycles clamping, but safety first
+						newQty = 0
 					}
 
-					// Update Deposit
 					deposit.Set("quantity", math.Round(newQty))
 					gt.app.Save(deposit)
 
 					gt.app.Logger().Info("[GRAPH] Machine Consumed from Deposit", "machine", machineId, "deposit", inputId, "consumed", consumed, "left", newQty)
+				}
+			case "storage":
+				// Consume from Storage (for processing machines)
+				consumed := 0.0
+
+				if itemDef.UseRecipe != "" {
+					// Recipe-based consumption: consume based on recipe inputs * cycles
+					recipe := gamedata.GetRecipe(itemDef.UseRecipe)
+					for _, input := range recipe.Inputs {
+						consumed += float64(input.Quantity) * float64(maxCycles)
+					}
+				} else {
+					// Non-recipe: consume totalProduced (1:1 ratio)
+					consumed = totalProduced
+				}
+
+				// Find the storage's linked inventory and deduct
+				invRecords, err := gt.app.FindRecordsByFilter("inventory", fmt.Sprintf("linked_storage = '%s'", inputId), "", 1, 0)
+				if err == nil && len(invRecords) > 0 {
+					inv := invRecords[0]
+					curQty := inv.GetFloat("quantity")
+					newQty := curQty - consumed
+					if newQty < 0 {
+						newQty = 0
+					}
+
+					inv.Set("quantity", newQty)
+					gt.app.Save(inv)
+
+					gt.app.Logger().Info("[GRAPH] Machine Consumed from Storage", "machine", machineId, "storage", inputId, "consumed", consumed, "left", newQty)
 				}
 			}
 		}
@@ -369,22 +403,24 @@ func (gt *GraphTraversal) ProcessMachine(machineId, requestedBy string, recursiv
 func (gt *GraphTraversal) ProcessStorage(storageId, requestedBy string, recursive bool) (*NodeFlow, error) {
 	gt.app.Logger().Info("[GRAPH] ProcessStorage called", "storage", storageId, "requestedBy", requestedBy, "recursive", recursive)
 
-	// Helper to find linked inventory
-	var inv *core.Record
-	invRecords, _ := gt.app.FindRecordsByFilter("inventory", fmt.Sprintf("linked_storage = '%s'", storageId), "", 1, 0)
-	if len(invRecords) == 0 {
-		gt.app.Logger().Warn("[GRAPH] ProcessStorage: No linked inventory found", "storage", storageId)
+	// Get storage machine to find company
+	storageMachine, err := gt.getMachine(storageId)
+	if err != nil {
+		gt.app.Logger().Error("[GRAPH] ProcessStorage: Storage not found", "storage", storageId)
 		return &NodeFlow{}, nil
 	}
-	inv = invRecords[0]
-	itemId := inv.GetString("item_id")
-	gt.app.Logger().Info("[GRAPH] ProcessStorage: Found inventory", "storage", storageId, "item", itemId, "currentQty", inv.GetFloat("quantity"))
+	companyId := storageMachine.GetString("company")
 
-	// Pull inputs from upstream nodes (machines, deposits)
-	if recursive {
-		inputFlow := 0.0
+	// Track if we already pulled from upstream this traversal
+	visitKey := fmt.Sprintf("storage:%s", storageId)
+	alreadyPulled := gt.visited[visitKey]
+
+	// Only pull from upstream on FIRST call (subsequent calls just report availability)
+	if recursive && !alreadyPulled {
+		gt.visited[visitKey] = true // Mark as pulled
+
 		edges := gt.edgeCache[storageId]
-		gt.app.Logger().Info("[GRAPH] ProcessStorage: Edges to process", "storage", storageId, "edgeCount", len(edges))
+		gt.app.Logger().Info("[GRAPH] ProcessStorage: Pulling from upstream", "storage", storageId, "edgeCount", len(edges))
 
 		for _, edge := range edges {
 			inputId := edge.GetString("input_id")
@@ -394,42 +430,44 @@ func (gt *GraphTraversal) ProcessStorage(storageId, requestedBy string, recursiv
 			flow, err := gt.processNodeRecursive(inputId, inputType, storageId, true)
 			if err != nil {
 				gt.app.Logger().Error("[GRAPH] ProcessStorage: Error from input", "inputId", inputId, "err", err)
+				continue
 			}
 			gt.app.Logger().Info("[GRAPH] ProcessStorage: Got flow from input", "inputId", inputId, "flowItem", flow.ItemID, "flowQty", flow.Quantity)
 
-			if flow.ItemID == itemId {
-				inputFlow += flow.Quantity
+			if flow.Quantity > 0 && flow.ItemID != "" {
+				// Find or create linked inventory and add the incoming flow
+				inv, err := gt.findOrCreateLinkedInventory(companyId, storageId, flow.ItemID)
+				if err != nil {
+					gt.app.Logger().Error("[GRAPH] ProcessStorage: Failed to find/create inventory", "err", err)
+					continue
+				}
+
+				newQty := inv.GetFloat("quantity") + flow.Quantity
+				inv.Set("quantity", newQty)
+				gt.app.Save(inv)
+				gt.app.Logger().Info("[GRAPH] Storage received input", "storage", storageId, "item", flow.ItemID, "added", flow.Quantity, "total", newQty)
 			}
 		}
-		if inputFlow > 0 {
-			inv.Set("quantity", inv.GetFloat("quantity")+inputFlow)
-			gt.app.Save(inv)
-			gt.app.Logger().Info("[GRAPH] Storage received input", "storage", storageId, "item", itemId, "added", inputFlow, "total", inv.GetFloat("quantity"))
-		} else {
-			gt.app.Logger().Info("[GRAPH] ProcessStorage: No input flow received", "storage", storageId)
-		}
+	} else if alreadyPulled {
+		gt.app.Logger().Info("[GRAPH] ProcessStorage: Already pulled, just reporting", "storage", storageId)
 	}
 
-	// Serve Request
+	// Find linked inventory for serving requests (use the first one found)
+	var inv *core.Record
+	invRecords, _ := gt.app.FindRecordsByFilter("inventory", fmt.Sprintf("linked_storage = '%s'", storageId), "", 1, 0)
+	if len(invRecords) == 0 {
+		gt.app.Logger().Info("[GRAPH] ProcessStorage: No linked inventory to serve", "storage", storageId)
+		return &NodeFlow{}, nil
+	}
+	inv = invRecords[0]
+	itemId := inv.GetString("item_id")
+
+	// Report how much is available (but DON'T consume here - let the machine consume what it needs)
 	currentQty := inv.GetFloat("quantity")
-	serveQty := 0.0
+	gt.app.Logger().Info("[GRAPH] ProcessStorage: Reporting availability", "storage", storageId, "item", itemId, "available", currentQty)
 
-	if requestedBy != "" && currentQty > 0 {
-		// How much is requested? The prompt implies "Flow".
-		// Since we don't transfer "Requests" with quantities yet (just "pull"),
-		// we assume we take EVERYTHING or a standard batch?
-		// Logic: "Aligner l'ensemble... sur la demande".
-		// But currently we don't pass a "RequiredAmount".
-		// We assume "Pull everything available".
-		serveQty = currentQty
-
-		if recursive {
-			inv.Set("quantity", 0) // Consumed by downstream
-			gt.app.Save(inv)
-		}
-	}
-
-	return &NodeFlow{ItemID: itemId, Quantity: serveQty, NodeType: "storage", NodeID: storageId}, nil
+	// Return available quantity - the calling machine will consume what it needs
+	return &NodeFlow{ItemID: itemId, Quantity: currentQty, NodeType: "storage", NodeID: storageId}, nil
 }
 
 // --- HELPERS ---
@@ -466,6 +504,35 @@ func (gt *GraphTraversal) getMachine(id string) (*core.Record, error) {
 		gt.recordCache[key] = rec
 	}
 	return rec, err
+}
+
+// findOrCreateLinkedInventory finds or creates an inventory record linked to a storage
+func (gt *GraphTraversal) findOrCreateLinkedInventory(companyId, storageId, itemId string) (*core.Record, error) {
+	// Try to find existing inventory with this storage and item
+	filter := fmt.Sprintf("linked_storage = '%s' && item_id = '%s'", storageId, itemId)
+	invRecords, err := gt.app.FindRecordsByFilter("inventory", filter, "", 1, 0)
+	if err == nil && len(invRecords) > 0 {
+		return invRecords[0], nil
+	}
+
+	// Create new inventory record
+	collection, err := gt.app.FindCollectionByNameOrId("inventory")
+	if err != nil {
+		return nil, fmt.Errorf("inventory collection not found: %w", err)
+	}
+
+	inv := core.NewRecord(collection)
+	inv.Set("company", companyId)
+	inv.Set("item_id", itemId)
+	inv.Set("quantity", 0)
+	inv.Set("linked_storage", storageId)
+
+	if err := gt.app.Save(inv); err != nil {
+		return nil, fmt.Errorf("failed to create linked inventory: %w", err)
+	}
+
+	gt.app.Logger().Info("[GRAPH] Created linked inventory for storage", "storage", storageId, "item", itemId, "company", companyId)
+	return inv, nil
 }
 
 // (Conserver les fonctions UpdateGenerators, CalculateEnergyBalance et ProcessDeposit de ton code original ici)
