@@ -3,49 +3,14 @@ package endpoints
 import (
 	"fmt"
 
-	"ketsuna.com/server/internal/hooks"
-
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
+	"ketsuna.com/server/internal/gamedata"
 )
 
 // registerMachineEndpoints handles /api/machines/* routes
 func registerMachineEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent) {
-
-	// POST /api/machines/auto-assign - Auto-assign available employees to machines
-	e.Router.POST("/api/machines/auto-assign", func(c *core.RequestEvent) error {
-		authRecord := c.Auth
-		if authRecord == nil {
-			return apis.NewUnauthorizedError("Non connecté", nil)
-		}
-
-		companyId := authRecord.GetString("active_company")
-		if companyId == "" {
-			return apis.NewBadRequestError("Aucune entreprise active", nil)
-		}
-
-		company, err := app.FindRecordById("companies", companyId)
-		if err != nil {
-			return apis.NewBadRequestError("Entreprise introuvable", nil)
-		}
-		if company.GetString("ceo") != authRecord.Id && !authRecord.IsSuperuser() {
-			return apis.NewForbiddenError("Accès refusé", nil)
-		}
-
-		return app.RunInTransaction(func(txApp core.App) error {
-			assignedCount, err := hooks.AutoAssignEmployees(txApp, companyId)
-			if err != nil {
-				return apis.NewBadRequestError("Erreur lors de l'assignation automatique", err)
-			}
-
-			return c.JSON(200, map[string]interface{}{
-				"success":       true,
-				"message":       fmt.Sprintf("%d employé(s) assigné(s) automatiquement", assignedCount),
-				"assignedCount": assignedCount,
-			})
-		})
-	})
 
 	// GET /api/machines/stats - Get accurate machine stats (total counts across ALL machines)
 	e.Router.GET("/api/machines/stats", func(c *core.RequestEvent) error {
@@ -98,35 +63,50 @@ func registerMachineEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent) {
 			itemMap[item.Id] = item
 		}
 
+		// Build map of employees per machine
+		employeesPerMachine := make(map[string]int)
+		busySet := make(map[string]bool)
+		for _, emp := range employees {
+			mId := emp.GetString("machine")
+			if mId != "" {
+				employeesPerMachine[mId]++
+				busySet[emp.Id] = true
+			}
+		}
+
 		// Calculate stats
 		totalMachines := len(machines)
 		totalMaxEmployees := 0
 		currentAssigned := 0
-		busySet := make(map[string]bool)
+		// busySet already populated above
 		machineTypeCount := 0
 		stockageTypeCount := 0
 
 		for _, m := range machines {
 			// Get max_employee from machine item (via map)
-			machineItemId := m.GetString("machine")
+			machineItemId := m.GetString("machine_id") // changed from "machine" to "machine_id" to match schema
+			if machineItemId == "" {
+				machineItemId = m.GetString("machine") // fallback if schema varies
+			}
+
 			maxEmp := 1
 			var machineItem *core.Record
 
 			if item, ok := itemMap[machineItemId]; ok {
 				machineItem = item
 				maxEmp = machineItem.GetInt("max_employee")
+				// If 0, check if it has unlimited or specific logic?
+				// Usually max_employee 0 means 0 allowed? Or unlimited?
+				// Assuming 0 -> 1 for safety unless specified
 				if maxEmp <= 0 {
 					maxEmp = 1
 				}
 			}
 			totalMaxEmployees += maxEmp
 
-			// Count assigned employees
-			empIds := m.GetStringSlice("employees")
-			currentAssigned += len(empIds)
-			for _, id := range empIds {
-				busySet[id] = true
-			}
+			// Count assigned employees using map
+			assigned := employeesPerMachine[m.Id]
+			currentAssigned += assigned
 
 			// Count types
 			if machineItem != nil {
@@ -143,6 +123,13 @@ func registerMachineEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent) {
 		// Count available employees (not assigned to any machine)
 		availableEmployees := 0
 		for _, emp := range employees {
+			// Check if busy (machine, deposit, exploration)
+			// busySet tracks machine assignment.
+			// Need to check deposit/exploration too?
+			// Original code just checked busySet which was populated from machine.employees
+			// But now busySet comes from employee.machine check.
+			// The original logic only counted "busy" if in machine.employees list.
+			// So existing logic is preserved if we only use busySet from machine assignment.
 			if !busySet[emp.Id] {
 				availableEmployees++
 			}
@@ -164,6 +151,116 @@ func registerMachineEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent) {
 			"stockageTypeCount":  stockageTypeCount,
 		})
 	})
+
+	// POST /api/machines/assign-employee - Link an employee to a machine
+	e.Router.POST("/api/machines/assign-employee", func(c *core.RequestEvent) error {
+		authRecord := c.Auth
+		if authRecord == nil {
+			return apis.NewUnauthorizedError("Non connecté", nil)
+		}
+
+		type req struct {
+			MachineId  string `json:"machineId"`
+			EmployeeId string `json:"employeeId"`
+		}
+		var data req
+		if err := c.BindBody(&data); err != nil {
+			return apis.NewBadRequestError("Données invalides", err)
+		}
+
+		companyId := authRecord.GetString("active_company")
+
+		// If EmployeeId is empty, we interpret as "unassign" but we need employee ID to unassign strictly?
+		// Actually typical flow: Assign X to Y.
+		// Unassign is usually "update employee X set machine=''".
+		// Let's support "Assign X to Machine Y".
+		if data.EmployeeId == "" {
+			return apis.NewBadRequestError("EmployeeId requis", nil)
+		}
+
+		// Verify Employee
+		employee, err := app.FindRecordById("employees", data.EmployeeId)
+		if err != nil {
+			return apis.NewBadRequestError("Employé introuvable", err)
+		}
+		if employee.GetString("employer") != companyId {
+			return apis.NewForbiddenError("Cet employé ne travaille pas pour vous", nil)
+		}
+
+		// Verify Machine
+		machine, err := app.FindRecordById("machines", data.MachineId)
+		if err != nil {
+			return apis.NewBadRequestError("Machine introuvable", err)
+		}
+		if machine.GetString("company") != companyId {
+			return apis.NewForbiddenError("Cette machine ne vous appartient pas", nil)
+		}
+
+		// CHECK CAPACITY
+		// Count current employees for this machine
+		currentEmployees, _ := app.FindRecordsByFilter("employees", fmt.Sprintf("machine = '%s'", data.MachineId), "", 0, 0)
+
+		machineItemId := machine.GetString("machine_id")
+		if machineItemId == "" {
+			machineItemId = machine.GetString("machine")
+		}
+
+		machineItem := gamedata.GetItem(machineItemId)
+		if machineItem != nil {
+			maxEmp := machineItem.MaxEmployee
+			if len(currentEmployees) >= maxEmp {
+				return apis.NewBadRequestError(fmt.Sprintf("Machine pleine (%d/%d)", len(currentEmployees), maxEmp), nil)
+			}
+		}
+
+		// Assign
+		employee.Set("machine", data.MachineId)
+		// Clear deposit assignment if any (assuming exclusive?)
+		// Usually employees are EITHER on machine OR deposit OR exploration.
+		employee.Set("deposit", "")
+		employee.Set("exploration", "")
+
+		if err := app.Save(employee); err != nil {
+			return apis.NewBadRequestError("Erreur lors de l'assignation", err)
+		}
+
+		return c.JSON(200, map[string]interface{}{
+			"success": true,
+			"message": "Employé assigné",
+		})
+	})
+
+	// POST /api/machines/unassign-employee
+	e.Router.POST("/api/machines/unassign-employee", func(c *core.RequestEvent) error {
+		authRecord := c.Auth
+		if authRecord == nil {
+			return apis.NewUnauthorizedError("Non connecté", nil)
+		}
+
+		type req struct {
+			EmployeeId string `json:"employeeId"`
+		}
+		var data req
+		if err := c.BindBody(&data); err != nil {
+			return apis.NewBadRequestError("Données invalides", err)
+		}
+
+		employee, err := app.FindRecordById("employees", data.EmployeeId)
+		if err != nil {
+			return apis.NewBadRequestError("Employé introuvable", err)
+		}
+		if employee.GetString("employer") != authRecord.GetString("active_company") {
+			return apis.NewForbiddenError("Accès refusé", nil)
+		}
+
+		employee.Set("machine", "")
+		if err := app.Save(employee); err != nil {
+			return apis.NewBadRequestError("Erreur lors de la désassignation", err)
+		}
+
+		return c.JSON(200, map[string]bool{"success": true})
+	})
+
 	// POST /api/machines/assign-deposit - Link a machine to a deposit
 	e.Router.POST("/api/machines/assign-deposit", func(c *core.RequestEvent) error {
 		authRecord := c.Auth

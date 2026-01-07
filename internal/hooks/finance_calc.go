@@ -60,6 +60,15 @@ func (l *EconomyLogic) CalculateCompanyFinance(companyId string) (*FinanceBreakd
 	employees, _ := l.app.FindRecordsByFilter("employees", fmt.Sprintf("employer = '%s'", companyId), "", 1000, 0)
 	assignedMachines, _ := l.app.FindRecordsByFilter("machines", fmt.Sprintf("company = '%s'", companyId), "", 1000, 0)
 
+	// Build map of employees per machine for efficiency
+	employeesPerMachine := make(map[string][]string)
+	for _, emp := range employees {
+		mId := emp.GetString("machine")
+		if mId != "" {
+			employeesPerMachine[mId] = append(employeesPerMachine[mId], emp.Id)
+		}
+	}
+
 	// --- CALCUL DES COÛTS FIXES (par 24h) ---
 	// A. Coût des machines (7€ par machine par 24h)
 	monthlyMachineCost := float64(len(assignedMachines) * 7)
@@ -97,7 +106,7 @@ func (l *EconomyLogic) CalculateCompanyFinance(companyId string) (*FinanceBreakd
 			}
 
 			// Vérifier si la machine a un employé assigné
-			assignedEmployeeIds := assignment.GetStringSlice("employees")
+			assignedEmployeeIds := employeesPerMachine[assignment.Id]
 			hasEmployee := len(assignedEmployeeIds) > 0
 
 			if !hasEmployee {

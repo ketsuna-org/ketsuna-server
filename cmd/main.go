@@ -24,13 +24,13 @@ func main() {
 	})
 
 	// Get the logic handlers from hooks
-	inv, eco, emp := hooks.GetLogicHandlers(app)
+	inv, eco, emp, graph := hooks.GetLogicHandlers(app)
 
 	// Register PocketBase hooks (companies, employees, inventory, recipes, cron)
-	hooks.RegisterHooks(app)
+	hooks.RegisterHooks(app, inv, eco, emp, graph)
 
 	// Register custom API endpoints (separated for better organization)
-	endpoints.RegisterAll(app, inv, eco, emp)
+	endpoints.RegisterAll(app, inv, eco, emp, graph)
 
 	if err := app.Start(); err != nil {
 		log.Fatal(err)

@@ -6,6 +6,7 @@ import (
 
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
+	"ketsuna.com/server/internal/gamedata"
 )
 
 // InventoryLogic handles inventory operations
@@ -20,8 +21,8 @@ func NewInventoryLogic(app *pocketbase.PocketBase) *InventoryLogic {
 // UpdateInventory adds or removes quantity from an inventory item
 func (l *InventoryLogic) UpdateInventory(app core.App, companyId, itemId string, quantity int) error {
 	// 1. Try to find existing inventory
-	// v0.35: app.FindFirstRecordByFilter
-	filter := fmt.Sprintf("company = '%s' && item = '%s'", companyId, itemId)
+	// Use item_id text field instead of item relation
+	filter := fmt.Sprintf("company = '%s' && item_id = '%s'", companyId, itemId)
 	record, err := app.FindFirstRecordByFilter("inventory", filter)
 
 	if err != nil {
@@ -57,7 +58,7 @@ func (l *InventoryLogic) UpdateInventory(app core.App, companyId, itemId string,
 
 	newRecord := core.NewRecord(collection)
 	newRecord.Set("company", companyId)
-	newRecord.Set("item", itemId)
+	newRecord.Set("item_id", itemId)
 	newRecord.Set("quantity", quantity)
 
 	return app.Save(newRecord)
@@ -65,7 +66,7 @@ func (l *InventoryLogic) UpdateInventory(app core.App, companyId, itemId string,
 
 // HasEnoughItems checks if company has enough of an item
 func (l *InventoryLogic) HasEnoughItems(app core.App, companyId, itemId string, requiredQty int) bool {
-	filter := fmt.Sprintf("company = '%s' && item = '%s'", companyId, itemId)
+	filter := fmt.Sprintf("company = '%s' && item_id = '%s'", companyId, itemId)
 	record, err := app.FindFirstRecordByFilter("inventory", filter)
 	if err != nil || record == nil {
 		return false
@@ -76,24 +77,23 @@ func (l *InventoryLogic) HasEnoughItems(app core.App, companyId, itemId string, 
 // HasRequiredTechnology checks if a company has the required tech for a recipe
 // Returns (hasIt bool, techName string) - techName is empty if no tech required
 func (l *InventoryLogic) HasRequiredTechnology(app core.App, companyId, recipeId string) (bool, string) {
-	recipe, err := app.FindRecordById("recipes", recipeId)
-	if err != nil {
+	// Use static gamedata for recipe lookup
+	recipe := gamedata.GetRecipe(recipeId)
+	if recipe == nil {
 		return false, ""
 	}
 
-	requiredTechId := recipe.GetString("required_tech")
+	requiredTechId := recipe.RequiredTech
 	if requiredTechId == "" {
 		return true, "" // No tech required
 	}
 
-	filter := fmt.Sprintf("company = '%s' && technology = '%s'", companyId, requiredTechId)
-	_, err = app.FindFirstRecordByFilter("company_techs", filter)
+	// Use technology_id text field instead of technology relation
+	filter := fmt.Sprintf("company = '%s' && technology_id = '%s'", companyId, requiredTechId)
+	_, err := app.FindFirstRecordByFilter("company_techs", filter)
 	if err != nil {
-		tech, _ := app.FindRecordById("technologies", requiredTechId)
-		techName := "Unknown Tech"
-		if tech != nil {
-			techName = tech.GetString("name")
-		}
+		// Use static gamedata for tech name
+		techName := gamedata.GetTechnologyName(requiredTechId)
 		return false, techName
 	}
 	return true, ""
@@ -119,98 +119,50 @@ func (l *InventoryLogic) AddRefinedItem(app core.App, companyId, itemId string, 
 }
 
 // ConsumeInputs verifies requirements and subtracts ingredients for a recipe
-// Supports both 'inputs_items' (simple list) and 'ingredients' (relation with specific quantities)
+// Uses static gamedata for recipe and item lookups
 // Returns xpGained
 func (l *InventoryLogic) ConsumeInputs(app core.App, companyId, recipeId string, quantity int) (float64, error) {
 	company, err := app.FindRecordById("companies", companyId)
 	if err != nil {
 		return 0, err
 	}
-	recipe, err := app.FindRecordById("recipes", recipeId)
-	if err != nil {
-		return 0, err
+
+	// Use static gamedata for recipe
+	recipe := gamedata.GetRecipe(recipeId)
+	if recipe == nil {
+		return 0, fmt.Errorf("unknown recipe: %s", recipeId)
 	}
 
-	// 1. Check Technology
-	requiredTechId := recipe.GetString("required_tech")
+	// 1. Check Technology using technology_id
+	requiredTechId := recipe.RequiredTech
 	if requiredTechId != "" {
-		filter := fmt.Sprintf("company = '%s' && technology = '%s'", companyId, requiredTechId)
+		filter := fmt.Sprintf("company = '%s' && technology_id = '%s'", companyId, requiredTechId)
 		_, err := app.FindFirstRecordByFilter("company_techs", filter)
 		if err != nil {
-			tech, _ := app.FindRecordById("technologies", requiredTechId)
-			techName := "Unknown Tech"
-			if tech != nil {
-				techName = tech.GetString("name")
-			}
+			techName := gamedata.GetTechnologyName(requiredTechId)
 			return 0, fmt.Errorf("technologie requise: %s", techName)
 		}
 	}
 
-	// 2. Check Stock for all inputs
-	// A. Check 'inputs_items' (Simple list with global input_quantity)
-	inputIds := recipe.GetStringSlice("inputs_items")
-	unitQty := recipe.GetInt("input_quantity")
-	if unitQty == 0 {
-		unitQty = 1
-	}
-	totalRequiredPerItem := unitQty * quantity
-
-	for _, itemId := range inputIds {
-		if !l.HasEnoughItems(app, companyId, itemId, totalRequiredPerItem) {
-			item, _ := app.FindRecordById("items", itemId)
-			itemName := "Unknown Item"
-			if item != nil {
-				itemName = item.GetString("name")
-			}
-			return 0, fmt.Errorf("quantité insuffisante de %s. Requis: %d", itemName, totalRequiredPerItem)
+	// 2. Check Stock for all inputs from static recipe data
+	for _, input := range recipe.Inputs {
+		totalRequired := input.Quantity * quantity
+		if !l.HasEnoughItems(app, companyId, input.ItemID, totalRequired) {
+			itemName := gamedata.GetItemName(input.ItemID)
+			return 0, fmt.Errorf("quantité insuffisante de %s. Requis: %d", itemName, totalRequired)
 		}
 	}
 
-	// B. Check 'ingredients' (Relation to recipes_ingredients)
-	ingredientRelationIds := recipe.GetStringSlice("ingredients")
-	type ingredientReq struct {
-		ItemId string
-		Qty    int
-	}
-	var complexIngredients []ingredientReq
-
-	for _, ingRelId := range ingredientRelationIds {
-		ingRec, err := app.FindRecordById("recipe_ingredients", ingRelId)
-		if err != nil {
-			continue // Skip invalid relations
-		}
-		itemId := ingRec.GetString("item")
-		qty := ingRec.GetInt("quantity")
-		totalQty := qty * quantity
-
-		if !l.HasEnoughItems(app, companyId, itemId, totalQty) {
-			item, _ := app.FindRecordById("items", itemId)
-			itemName := "Unknown Item"
-			if item != nil {
-				itemName = item.GetString("name")
-			}
-			return 0, fmt.Errorf("quantité insuffisante de %s. Requis: %d", itemName, totalQty)
-		}
-		complexIngredients = append(complexIngredients, ingredientReq{ItemId: itemId, Qty: totalQty})
-	}
-
-	// 3. Consume Items
-	// A. Consume 'inputs_items'
-	for _, itemId := range inputIds {
-		if err := l.UpdateInventory(app, companyId, itemId, -totalRequiredPerItem); err != nil {
+	// 3. Consume Items from static recipe inputs
+	for _, input := range recipe.Inputs {
+		totalRequired := input.Quantity * quantity
+		if err := l.UpdateInventory(app, companyId, input.ItemID, -totalRequired); err != nil {
 			return 0, err
 		}
 	}
 
-	// B. Consume 'ingredients'
-	for _, req := range complexIngredients {
-		if err := l.UpdateInventory(app, companyId, req.ItemId, -req.Qty); err != nil {
-			return 0, err
-		}
-	}
-
-	// 4.  XP
-	xpGained := float64(recipe.GetInt("xp_reward") * quantity)
+	// 4. XP (no XP reward in static recipes currently)
+	xpGained := 0.0
 
 	if err := app.Save(company); err != nil {
 		return 0, err
@@ -229,9 +181,10 @@ type ProductionResult struct {
 }
 
 func (l *InventoryLogic) ProduceItem(app core.App, companyId, recipeId string, quantity int) (*ProductionResult, error) {
-	recipe, err := app.FindRecordById("recipes", recipeId)
-	if err != nil {
-		return nil, err
+	// Use static gamedata for recipe
+	recipe := gamedata.GetRecipe(recipeId)
+	if recipe == nil {
+		return nil, fmt.Errorf("unknown recipe: %s", recipeId)
 	}
 
 	// Consume inputs
@@ -240,35 +193,45 @@ func (l *InventoryLogic) ProduceItem(app core.App, companyId, recipeId string, q
 		return nil, err
 	}
 
-	outputItemId := recipe.GetString("output_item")
-	if err := l.UpdateInventory(app, companyId, outputItemId, quantity); err != nil {
+	outputItemId := recipe.OutputItem
+	outputQty := recipe.OutputQuantity
+	if outputQty == 0 {
+		outputQty = 1
+	}
+	totalOutput := outputQty * quantity
+
+	if err := l.UpdateInventory(app, companyId, outputItemId, totalOutput); err != nil {
 		return nil, err
 	}
 
-	outputItem, _ := app.FindRecordById("items", outputItemId)
-	itemName := "Unknown"
-	if outputItem != nil {
-		itemName = outputItem.GetString("name")
-	}
+	// Use static gamedata for item name
+	itemName := gamedata.GetItemName(outputItemId)
 
 	return &ProductionResult{
 		Success:        true,
-		Produced:       quantity,
+		Produced:       totalOutput,
 		ItemName:       itemName,
 		XpGained:       xpGained,
-		ProductionTime: recipe.GetInt("production_time"),
+		ProductionTime: recipe.ProductionTime,
 	}, nil
 }
 
 // CompleteProduction adds the output item (used for long-running production finishing)
 func (l *InventoryLogic) CompleteProduction(app core.App, companyId, recipeId string, quantity int) error {
-	recipe, err := app.FindRecordById("recipes", recipeId)
-	if err != nil {
-		return err
+	// Use static gamedata for recipe
+	recipe := gamedata.GetRecipe(recipeId)
+	if recipe == nil {
+		return fmt.Errorf("unknown recipe: %s", recipeId)
 	}
-	outputItemId := recipe.GetString("output_item")
 
-	if err := l.UpdateInventory(app, companyId, outputItemId, quantity); err != nil {
+	outputItemId := recipe.OutputItem
+	outputQty := recipe.OutputQuantity
+	if outputQty == 0 {
+		outputQty = 1
+	}
+	totalOutput := outputQty * quantity
+
+	if err := l.UpdateInventory(app, companyId, outputItemId, totalOutput); err != nil {
 		return err
 	}
 
@@ -282,6 +245,7 @@ type SellResult struct {
 }
 
 // SellInventory handles selling items to the system
+// Uses static gamedata for item data - no market updates since items are static
 func (l *InventoryLogic) SellInventory(app core.App, companyId, itemId string, quantity int) (*SellResult, error) {
 	if quantity <= 0 {
 		return nil, fmt.Errorf("quantité doit être > 0")
@@ -291,14 +255,16 @@ func (l *InventoryLogic) SellInventory(app core.App, companyId, itemId string, q
 	if err != nil {
 		return nil, err
 	}
-	item, err := app.FindRecordById("items", itemId)
-	if err != nil {
-		return nil, err
+
+	// Use static gamedata for item
+	item := gamedata.GetItem(itemId)
+	if item == nil {
+		return nil, fmt.Errorf("unknown item: %s", itemId)
 	}
 
-	// Check stock
+	// Check stock using item_id
 	if !l.HasEnoughItems(app, companyId, itemId, quantity) {
-		inv, _ := app.FindFirstRecordByFilter("inventory", fmt.Sprintf("company = '%s' && item = '%s'", companyId, itemId))
+		inv, _ := app.FindFirstRecordByFilter("inventory", fmt.Sprintf("company = '%s' && item_id = '%s'", companyId, itemId))
 		have := 0
 		if inv != nil {
 			have = inv.GetInt("quantity")
@@ -306,8 +272,8 @@ func (l *InventoryLogic) SellInventory(app core.App, companyId, itemId string, q
 		return nil, fmt.Errorf("stock insuffisant. Disponible: %d, demandé: %d", have, quantity)
 	}
 
-	// Calculate prices
-	unitBuyPrice := item.GetFloat("base_price")
+	// Calculate prices from static data
+	unitBuyPrice := item.BasePrice
 	unitSellPrice := math.Round(((unitBuyPrice/2)+math.SmallestNonzeroFloat64)*100) / 100
 	revenue := unitSellPrice * float64(quantity)
 
@@ -318,32 +284,11 @@ func (l *InventoryLogic) SellInventory(app core.App, companyId, itemId string, q
 
 	// Update Company Balance
 	currentBalance := company.GetFloat("balance")
-
 	newBalance := math.Round((currentBalance+revenue)*100) / 100
 	company.Set("balance", newBalance)
 
-	// --- MARKET UPDATE ON SELL ---
-	// --- MARKET UPDATE ON SELL ---
-	// Sell -> Stock UP, Price DOWN
-	stock := item.GetInt("market_demand")
-	item.Set("market_demand", stock+quantity)
+	// No market updates - items are now static
 
-	// Price Update logic - ONLY FOR MACHINES
-	if item.GetString("type") == "Machine" {
-		priceFactor := 0.005
-		newPrice := unitBuyPrice * (1 - float64(quantity)*priceFactor)
-		if newPrice < 0.1 {
-			newPrice = 0.1
-		}
-		item.Set("base_price", math.Round(newPrice*100)/100)
-	}
-
-	if err := app.Save(item); err != nil {
-		return nil, err
-	}
-
-	// Tech points (not awarded on sale anymore)
-	techGain := 0.0
 	if err := app.Save(company); err != nil {
 		return nil, err
 	}
@@ -351,6 +296,6 @@ func (l *InventoryLogic) SellInventory(app core.App, companyId, itemId string, q
 	return &SellResult{
 		Revenue:       revenue,
 		UnitSellPrice: unitSellPrice,
-		TechGain:      techGain,
+		TechGain:      0.0,
 	}, nil
 }

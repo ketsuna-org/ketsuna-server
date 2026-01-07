@@ -2,6 +2,7 @@ package hooks
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
 	"time"
 
@@ -42,7 +43,7 @@ func ResolveExplorations(app *pocketbase.PocketBase) {
 func processExplorationResult(app *pocketbase.PocketBase, exploration *core.Record) {
 	// 50% chance of success for now
 	// TODO: Adjust based on tech or company stats
-	successRate := 0.40
+	successRate := 0.98
 	roll := rand.Float64()
 
 	isSuccess := roll <= successRate
@@ -55,7 +56,7 @@ func processExplorationResult(app *pocketbase.PocketBase, exploration *core.Reco
 		// Randomize Quantity (e.g. 50k to 500k)
 		baseQty := 50000.0
 		qtyParams := rand.Float64() * 450000.0 // 0 to 450k
-		quantity := baseQty + qtyParams
+		quantity := math.Floor(baseQty + qtyParams)
 
 		// Randomize Size (Level 1 to 10)
 		size := 1 + rand.Intn(10) // Random level 1-10
@@ -64,7 +65,7 @@ func processExplorationResult(app *pocketbase.PocketBase, exploration *core.Reco
 		depositsCollection, _ := app.FindCollectionByNameOrId("deposits")
 		deposit := core.NewRecord(depositsCollection)
 		deposit.Set("company", companyId)
-		deposit.Set("ressource", resourceId) // Corrected field name from schema update 'ressource'
+		deposit.Set("ressource_id", resourceId) // Corrected field name from schema update 'ressource'
 		deposit.Set("quantity", quantity)
 		deposit.Set("size", size)
 
@@ -98,7 +99,7 @@ func createNotification(app *pocketbase.PocketBase, companyId string, title stri
 	}
 	userId := company.GetString("ceo")
 
-	msgs, _ := app.FindCollectionByNameOrId("messages")
+	msgs, _ := app.FindCollectionByNameOrId("notifications")
 	if msgs != nil {
 		msg := core.NewRecord(msgs)
 		msg.Set("user", userId)

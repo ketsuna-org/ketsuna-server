@@ -3,54 +3,96 @@ package hooks
 import (
 	"fmt"
 	"math/rand"
+	"time"
 
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
+	"ketsuna.com/server/internal/gamedata"
 )
 
-func registerMachineHooks(app *pocketbase.PocketBase, inv *InventoryLogic) {
+func registerMachineHooks(app *pocketbase.PocketBase, inv *InventoryLogic, graph *GraphEconomy) {
+	// Hook for Lazy Evaluation on View
+	app.OnRecordViewRequest("machines").BindFunc(func(e *core.RecordRequestEvent) error {
+		if graph != nil {
+			graph.CalculateNodeFlow(e.Record.Id, "machine")
+		}
+		return e.Next()
+	})
+
+	// Hook for Lazy Evaluation on List
+	// REMOVED: Optimizing to avoid N+1 queries.
+	// GraphEconomy handles individual nodes updates via UI interaction or Global Tick.
+	// Listing all machines should purely be a DB fetch.
+	/*
+		app.OnRecordsListRequest("machines").BindFunc(func(e *core.RecordsListRequestEvent) error {
+			if graph != nil {
+				for _, rec := range e.Records {
+					graph.CalculateNodeFlow(rec.Id, "machine")
+				}
+			}
+			return e.Next()
+		})
+	*/
+
 	app.OnRecordCreateRequest("machines").BindFunc(func(e *core.RecordRequestEvent) error {
 		record := e.Record
 		companyId := record.GetString("company")
-		machineItemId := record.GetString("machine")
-		employeeIds := record.GetStringSlice("employees")
+		machineItemId := record.GetString("machine_id")
+
+		depositId := record.GetString("deposit")
 
 		if companyId == "" || machineItemId == "" {
 			return apis.NewBadRequestError("ID de compagnie ou de machine manquant.", nil)
 		}
 
 		// 1. Validate employees not assigned elsewhere
-		if len(employeeIds) > 0 {
-			for _, empId := range employeeIds {
-				found, err := app.FindRecordsByFilter("machines", fmt.Sprintf("employees ~ '%s'", empId), "", 1, 0)
-				if err == nil && len(found) > 0 {
-					return apis.NewBadRequestError("Un ou plusieurs employés sont déjà assignés à une autre machine.", nil)
-				}
-				// Check if assigned to deposit
-				emp, err := app.FindRecordById("employees", empId)
-				if err == nil && emp.GetString("deposit") != "" {
-					return apis.NewBadRequestError("Cet employé est déjà assigné à un gisement.", nil)
-				}
+		// REMOVED: Employees are now assigned via employee record update, not machine record.
+		// The endpoints/machines.go handles assignment validation.
+
+		// 2. Check max_employee limit using static gamedata
+		// REMOVED: Same reason.
+
+		// 3. VALIDATE DEPOSIT CAPACITY (if assigning to deposit)
+		if depositId != "" {
+			deposit, err := app.FindRecordById("deposits", depositId)
+			if err != nil {
+				return apis.NewBadRequestError("Gisement introuvable.", nil)
+			}
+
+			size := deposit.GetInt("size")
+			if size <= 0 {
+				size = 1
+			}
+
+			maxMachines := gamedata.GetMaxMachinesForDeposit(size)
+
+			// Count current machines on this deposit
+			currentMachines, _ := app.FindRecordsByFilter("machines",
+				fmt.Sprintf("deposit = '%s'", depositId), "", 0, 0)
+
+			if len(currentMachines) >= maxMachines {
+				return apis.NewBadRequestError(fmt.Sprintf(
+					"Ce gisement (taille %d) ne peut accueillir que %d machine(s). Déjà %d assignée(s).",
+					size, maxMachines, len(currentMachines)), nil)
 			}
 		}
 
-		// 2. Check max_employee limit
-		machineItem, err := app.FindRecordById("items", machineItemId)
-		if err == nil {
-			maxEmp := machineItem.GetInt("max_employee")
-			if maxEmp > 0 && len(employeeIds) > maxEmp {
-				return apis.NewBadRequestError(fmt.Sprintf("Cette machine ne peut accueillir que %d employé(s) maximum.", maxEmp), nil)
-			}
+		// 4. SET INITIAL DURABILITY AND START PRODUCTION (skip for storage)
+		// Storage items don't have durability or production, they just store
+		machineItem := gamedata.GetItem(machineItemId)
+		if machineItem != nil && machineItem.Type != gamedata.ItemTypeStockage {
+			// Initialize production timestamp so machines start producing immediately
+			record.Set("production_started_at", time.Now())
 		}
 
-		// 3. ATOMIC: Check and Deduct Inventory using transaction
+		// 5. ATOMIC: Check and Deduct Inventory using transaction
 		// This prevents race conditions when multiple machines are created simultaneously
 		var deductErr error
 		txErr := app.RunInTransaction(func(txApp core.App) error {
-			// Re-fetch inventory inside transaction for fresh data
+			// Re-fetch inventory inside transaction for fresh data (using item_id)
 			inventory, err := txApp.FindFirstRecordByFilter("inventory",
-				fmt.Sprintf("company = '%s' && item = '%s'", companyId, machineItemId))
+				fmt.Sprintf("company = '%s' && item_id = '%s'", companyId, machineItemId))
 			if err != nil {
 				deductErr = apis.NewBadRequestError("Vous n'avez pas cette machine en stock dans votre inventaire.", nil)
 				return deductErr
@@ -83,56 +125,43 @@ func registerMachineHooks(app *pocketbase.PocketBase, inv *InventoryLogic) {
 		return e.Next()
 	})
 
-	app.OnRecordUpdateRequest("machines").BindFunc(func(e *core.RecordRequestEvent) error {
+	// Hook to auto-start production when machine is placed
+	app.OnRecordAfterUpdateSuccess("machines").BindFunc(func(e *core.RecordEvent) error {
 		record := e.Record
-		machineItemId := record.GetString("machine")
-		employeeIds := record.GetStringSlice("employees")
 
-		// Check max_employee limit
-		if machineItemId != "" {
-			machineItem, err := app.FindRecordById("items", machineItemId)
-			if err == nil {
-				maxEmp := machineItem.GetInt("max_employee")
-				if maxEmp > 0 && len(employeeIds) > maxEmp {
-					return apis.NewBadRequestError(fmt.Sprintf("Cette machine ne peut accueillir que %d employé(s) maximum. Vous essayez d'en assigner %d.", maxEmp, len(employeeIds)), nil)
-				}
-			}
-		}
+		// Check if machine was just placed (placed changed to true)
+		if record.GetBool("placed") {
+			// Check if production_started_at is not set
+			startedAt := record.GetDateTime("production_started_at")
+			if startedAt.Time().IsZero() {
+				// Skip storage items - they don't need production
+				machineItemId := record.GetString("machine_id")
+				machineItem := gamedata.GetItem(machineItemId)
 
-		if len(employeeIds) > 0 {
-			e.App.Logger().Info("[MACHINES] Validating update", "machineId", record.Id, "newEmployeeList", employeeIds)
-			for _, empId := range employeeIds {
-				// Check Machine
-				found, err := app.FindRecordsByFilter("machines", fmt.Sprintf("employees ~ '%s'", empId), "", 10, 0)
-				if err == nil {
-					e.App.Logger().Info("[MACHINES] Checked employee", "empId", empId, "foundInMachines", len(found))
-					for _, m := range found {
-						e.App.Logger().Info("[MACHINES] comparing", "foundId", m.Id, "currentId", record.Id)
-						if m.Id != record.Id {
-							app.Logger().Error("[MACHINES] Validation failed: Employee already busy", "empId", empId, "otherMachine", m.Id)
-							return apis.NewBadRequestError("Un ou plusieurs employés sont déjà assignés à une autre machine.", nil)
-						}
+				if machineItem != nil && machineItem.Type != gamedata.ItemTypeStockage {
+					// Initialize production timestamp
+					record.Set("production_started_at", time.Now())
+					if err := app.Save(record); err != nil {
+						app.Logger().Error("[MACHINES] Failed to auto-start production", "err", err)
+					} else {
+						app.Logger().Info("[MACHINES] Auto-started production for placed machine", "machineId", record.Id)
 					}
-				} else {
-					e.App.Logger().Error("[MACHINES] Error checking filter", "error", err)
-				}
-
-				// Check Deposit
-				emp, err := app.FindRecordById("employees", empId)
-				if err == nil && emp.GetString("deposit") != "" {
-					return apis.NewBadRequestError("Cet employé est déjà assigné à un gisement.", nil)
 				}
 			}
-		} else {
-			e.App.Logger().Info("[MACHINES] Clearing all employees", "machineId", record.Id)
 		}
+
 		return e.Next()
 	})
+
+	// REMOVED: OnRecordUpdateRequest validation for employees.
+	// Since machines no longer have 'employees' field, this hook serves no purpose for employee validation.
+	// If other updates need validation, add them here.
+	// app.OnRecordUpdateRequest("machines").BindFunc(...)
 
 	app.OnRecordDeleteRequest("machines").BindFunc(func(e *core.RecordRequestEvent) error {
 		record := e.Record
 		companyId := record.GetString("company")
-		machineItemId := record.GetString("machine")
+		machineItemId := record.GetString("machine_id")
 
 		if companyId != "" && machineItemId != "" {
 			if err := inv.UpdateInventory(app, companyId, machineItemId, 1); err != nil {
@@ -156,19 +185,20 @@ func EnforceMaxEmployees(app *pocketbase.PocketBase) {
 
 	fixedCount := 0
 	for _, machine := range machines {
-		machineItemId := machine.GetString("machine")
+		machineItemId := machine.GetString("machine_id")
 		employeeIds := machine.GetStringSlice("employees")
 
 		if machineItemId == "" || len(employeeIds) == 0 {
 			continue
 		}
 
-		machineItem, err := app.FindRecordById("items", machineItemId)
-		if err != nil {
+		// Use static gamedata for machine info
+		machineItem := gamedata.GetItem(machineItemId)
+		if machineItem == nil {
 			continue
 		}
 
-		maxEmp := machineItem.GetInt("max_employee")
+		maxEmp := machineItem.MaxEmployee
 		if maxEmp <= 0 {
 			continue // No limit defined
 		}
@@ -177,7 +207,7 @@ func EnforceMaxEmployees(app *pocketbase.PocketBase) {
 			excess := len(employeeIds) - maxEmp
 			app.Logger().Warn("[FIX] Machine has too many employees",
 				"machineId", machine.Id,
-				"machineName", machineItem.GetString("name"),
+				"machineName", machineItem.Name,
 				"current", len(employeeIds),
 				"max", maxEmp,
 				"excess", excess)
@@ -254,30 +284,27 @@ func AutoAssignDeposits(app core.App, companyId string) (int, error) {
 			continue
 		}
 
-		machineItemId := m.GetString("machine")
-		machineItem, err := app.FindRecordById("items", machineItemId)
-		if err != nil {
+		machineItemId := m.GetString("machine_id")
+		machineItem := gamedata.GetItem(machineItemId)
+		if machineItem == nil {
 			continue
 		}
 
 		// Check if machine output is "is_explorable" (meaning it needs a deposit)
-		// The machine item itself doesn't have "is_explorable", its PRODUCT does.
-		// Wait, the schema says:
-		// items -> product (relation)
-		// items -> is_explorable (boolean).
-		// Usually a "Drill" produces "Iron Ore". "Iron Ore" is explorable.
+		// The machine's product is what we check for explorable status
 
-		productId := machineItem.GetString("product")
+		productId := machineItem.Product
 		if productId == "" {
 			continue
 		}
 
-		productItem, err := app.FindRecordById("items", productId)
-		if err != nil {
+		// Use static gamedata for product item
+		productItem := gamedata.GetItem(productId)
+		if productItem == nil {
 			continue
 		}
 
-		if !productItem.GetBool("is_explorable") {
+		if !productItem.IsExplorable {
 			continue // Not a mining machine
 		}
 
@@ -298,118 +325,6 @@ func AutoAssignDeposits(app core.App, companyId string) (int, error) {
 				assignedCount++
 			}
 		}
-	}
-
-	return assignedCount, nil
-}
-
-// AutoAssignEmployees assigns available employees to machines efficiently
-func AutoAssignEmployees(app core.App, companyId string) (int, error) {
-	// Get all machines for the company
-	machines, err := app.FindRecordsByFilter("machines", fmt.Sprintf("company = '%s'", companyId), "", 0, 0)
-	if err != nil {
-		return 0, fmt.Errorf("erreur récupération machines: %v", err)
-	}
-
-	// Get all employees for the company (sorted by efficiency)
-	employees, err := app.FindRecordsByFilter("employees", fmt.Sprintf("employer = '%s'", companyId), "-efficiency", 0, 0)
-	if err != nil {
-		return 0, fmt.Errorf("erreur récupération employés: %v", err)
-	}
-
-	// Build set of already-busy employee IDs
-	busySet := make(map[string]bool)
-	for _, m := range machines {
-		empIds := m.GetStringSlice("employees")
-		for _, id := range empIds {
-			busySet[id] = true
-		}
-	}
-
-	// Build list of available employees
-	var availableEmpIds []string
-	for _, emp := range employees {
-		if !busySet[emp.Id] {
-			availableEmpIds = append(availableEmpIds, emp.Id)
-		}
-	}
-
-	if len(availableEmpIds) == 0 {
-		return 0, nil
-	}
-
-	// Sort machines: prioritize those with 0 employees
-	type machineSlot struct {
-		machine     *core.Record
-		maxEmp      int
-		currentEmp  int
-		slotsNeeded int
-	}
-	var machinesNeedingEmp []machineSlot
-
-	for _, m := range machines {
-		machineItemId := m.GetString("machine")
-		maxEmp := 1
-		if machineItemId != "" {
-			machineItem, err := app.FindRecordById("items", machineItemId)
-			if err == nil {
-				maxEmp = machineItem.GetInt("max_employee")
-				if maxEmp <= 0 {
-					maxEmp = 1
-				}
-			}
-		}
-
-		currentEmp := len(m.GetStringSlice("employees"))
-		slotsNeeded := maxEmp - currentEmp
-
-		if slotsNeeded > 0 {
-			machinesNeedingEmp = append(machinesNeedingEmp, machineSlot{
-				machine:     m,
-				maxEmp:      maxEmp,
-				currentEmp:  currentEmp,
-				slotsNeeded: slotsNeeded,
-			})
-		}
-	}
-
-	// Sort: empty machines first
-	for i := 0; i < len(machinesNeedingEmp)-1; i++ {
-		for j := i + 1; j < len(machinesNeedingEmp); j++ {
-			iEmpty := machinesNeedingEmp[i].currentEmp == 0
-			jEmpty := machinesNeedingEmp[j].currentEmp == 0
-			if jEmpty && !iEmpty {
-				machinesNeedingEmp[i], machinesNeedingEmp[j] = machinesNeedingEmp[j], machinesNeedingEmp[i]
-			}
-		}
-	}
-
-	// Assign employees to machines
-	assignedCount := 0
-	availableIndex := 0
-
-	for _, ms := range machinesNeedingEmp {
-		if availableIndex >= len(availableEmpIds) {
-			break
-		}
-
-		currentEmployees := ms.machine.GetStringSlice("employees")
-		toAssignCount := ms.slotsNeeded
-		if toAssignCount > len(availableEmpIds)-availableIndex {
-			toAssignCount = len(availableEmpIds) - availableIndex
-		}
-
-		newEmps := availableEmpIds[availableIndex : availableIndex+toAssignCount]
-		availableIndex += toAssignCount
-
-		updatedList := append(currentEmployees, newEmps...)
-		ms.machine.Set("employees", updatedList)
-		if err := app.Save(ms.machine); err != nil {
-			// Continue even if one fails
-			continue
-		}
-
-		assignedCount += toAssignCount
 	}
 
 	return assignedCount, nil

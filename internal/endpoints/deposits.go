@@ -2,6 +2,7 @@ package endpoints
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/apis"
@@ -96,6 +97,12 @@ func registerDepositEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent) {
 			return apis.NewBadRequestError("Erreur lors de l'assignation", err)
 		}
 
+		// Initialize last_harvest_at if not set (starts the mining timer)
+		if deposit.GetDateTime("last_harvest_at").Time().IsZero() {
+			deposit.Set("last_harvest_at", time.Now())
+			app.Save(deposit)
+		}
+
 		return re.JSON(http.StatusOK, map[string]any{
 			"success": true,
 			"message": "Employé assigné au gisement",
@@ -142,6 +149,88 @@ func registerDepositEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent) {
 		return re.JSON(http.StatusOK, map[string]any{
 			"success": true,
 			"message": "Employé retiré du gisement",
+		})
+	}).Bind(apis.RequireAuth())
+
+	// POST /api/deposits/harvest - Transfer harvested resources to company inventory
+	e.Router.POST("/api/deposits/harvest", func(re *core.RequestEvent) error {
+		var body struct {
+			DepositId string `json:"depositId"`
+		}
+		if err := re.BindBody(&body); err != nil {
+			return apis.NewBadRequestError("Invalid request body", err)
+		}
+
+		authRecord := re.Auth
+		if authRecord == nil {
+			return apis.NewUnauthorizedError("Vous devez être connecté", nil)
+		}
+
+		// Verify deposit exists and belongs to user's company
+		deposit, err := app.FindRecordById("deposits", body.DepositId)
+		if err != nil {
+			return apis.NewNotFoundError("Gisement non trouvé", nil)
+		}
+
+		companyId := deposit.GetString("company")
+		company, err := app.FindRecordById("companies", companyId)
+		if err != nil {
+			return apis.NewNotFoundError("Entreprise non trouvée", nil)
+		}
+
+		if company.GetString("ceo") != authRecord.Id {
+			return apis.NewForbiddenError("Vous n'êtes pas le CEO de cette entreprise", nil)
+		}
+
+		// Get harvested amount
+		harvested := deposit.GetFloat("harvested")
+		if harvested <= 0 {
+			return apis.NewBadRequestError("Aucune ressource à récolter", nil)
+		}
+
+		// Check for "ressource_id" (new schema) then fallback to "ressource" (old schema)
+		resourceId := deposit.GetString("ressource_id")
+		if resourceId == "" {
+			resourceId = deposit.GetString("ressource")
+		}
+
+		if resourceId == "" {
+			return apis.NewBadRequestError("Type de ressource invalide", nil)
+		}
+
+		// Find or create inventory record
+		// Note: Inventory schema likely uses "item_id" based on graph_traversal.go usage
+		inventory, err := app.FindFirstRecordByFilter(
+			"inventory",
+			"company = '"+companyId+"' && item_id = '"+resourceId+"'",
+		)
+		if err != nil {
+			// Create new inventory record
+			inventoryCollection, _ := app.FindCollectionByNameOrId("inventory")
+			inventory = core.NewRecord(inventoryCollection)
+			inventory.Set("company", companyId)
+			inventory.Set("item_id", resourceId)
+			inventory.Set("quantity", harvested)
+		} else {
+			// Update existing
+			currentQty := inventory.GetFloat("quantity")
+			inventory.Set("quantity", currentQty+harvested)
+		}
+
+		if err := app.Save(inventory); err != nil {
+			return apis.NewBadRequestError("Erreur lors du transfert", err)
+		}
+
+		// Reset harvested to 0
+		deposit.Set("harvested", 0)
+		if err := app.Save(deposit); err != nil {
+			return apis.NewBadRequestError("Erreur lors de la réinitialisation", err)
+		}
+
+		return re.JSON(http.StatusOK, map[string]any{
+			"success":   true,
+			"message":   "Ressources récoltées",
+			"harvested": harvested,
 		})
 	}).Bind(apis.RequireAuth())
 }

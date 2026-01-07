@@ -180,3 +180,20 @@ func EnforceDepositCapacity(app *pocketbase.PocketBase) {
 	}
 	app.Logger().Info("[CLEANUP] EnforceDepositCapacity finished.")
 }
+
+// SoftCleanWAL performs a passive WAL checkpoint to move pages from the WAL file
+// to the main database file without blocking other database operations.
+// It helps keep the WAL file size in check.
+func SoftCleanWAL(app *pocketbase.PocketBase) {
+	app.Logger().Info("[CLEANUP] Performing Soft WAL Checkpoint...")
+
+	// PRAGMA wal_checkpoint(PASSIVE)
+	// PASSIVE: Copy as many frames as possible without waiting for readers/writers.
+	// It does NOT block.
+	_, err := app.DB().NewQuery("PRAGMA wal_checkpoint(PASSIVE);").Execute()
+	if err != nil {
+		app.Logger().Error("[CLEANUP] Failed to execute WAL checkpoint", "error", err)
+	} else {
+		app.Logger().Info("[CLEANUP] WAL Checkpoint (PASSIVE) executed.")
+	}
+}
