@@ -894,12 +894,13 @@
             },
             {
                 "hidden": false,
-                "id": "geoPoint1587448267",
+                "id": "json1587448267",
+                "maxSize": 0,
                 "name": "location",
                 "presentable": false,
                 "required": false,
                 "system": false,
-                "type": "geoPoint"
+                "type": "json"
             },
             {
                 "hidden": false,
@@ -1005,7 +1006,7 @@
         "listRule": "",
         "viewRule": "",
         "createRule": null,
-        "updateRule": null,
+        "updateRule": "",
         "deleteRule": null,
         "name": "deposits",
         "type": "base",
@@ -1051,15 +1052,6 @@
             },
             {
                 "hidden": false,
-                "id": "geoPoint1587448267",
-                "name": "location",
-                "presentable": false,
-                "required": false,
-                "system": false,
-                "type": "geoPoint"
-            },
-            {
-                "hidden": false,
                 "id": "number4156564586",
                 "max": null,
                 "min": null,
@@ -1083,6 +1075,27 @@
                 "required": false,
                 "system": false,
                 "type": "text"
+            },
+            {
+                "hidden": false,
+                "id": "json1587448267",
+                "maxSize": 0,
+                "name": "location",
+                "presentable": false,
+                "required": false,
+                "system": false,
+                "type": "json"
+            },
+            {
+                "hidden": false,
+                "id": "date2892174704",
+                "max": "",
+                "min": "",
+                "name": "last_harvest_at",
+                "presentable": false,
+                "required": false,
+                "system": false,
+                "type": "date"
             },
             {
                 "hidden": false,
@@ -1110,11 +1123,11 @@
     },
     {
         "id": "pbc_984162241",
-        "listRule": null,
-        "viewRule": null,
-        "createRule": null,
-        "updateRule": null,
-        "deleteRule": null,
+        "listRule": "",
+        "viewRule": "",
+        "createRule": "",
+        "updateRule": "",
+        "deleteRule": "",
         "name": "edge_relation",
         "type": "base",
         "fields": [
@@ -1184,7 +1197,8 @@
                 "system": false,
                 "type": "select",
                 "values": [
-                    "company"
+                    "company",
+                    "machine"
                 ]
             },
             {
@@ -1379,6 +1393,17 @@
                     "Explorateur",
                     "PDG"
                 ]
+            },
+            {
+                "hidden": false,
+                "id": "date2105166138",
+                "max": "",
+                "min": "",
+                "name": "energy_cycle_start",
+                "presentable": false,
+                "required": false,
+                "system": false,
+                "type": "date"
             },
             {
                 "hidden": false,
@@ -1707,21 +1732,34 @@
             },
             {
                 "hidden": false,
-                "id": "geoPoint1587448267",
-                "name": "location",
-                "presentable": false,
-                "required": false,
-                "system": false,
-                "type": "geoPoint"
-            },
-            {
-                "hidden": false,
                 "id": "bool2105338258",
                 "name": "placed",
                 "presentable": false,
                 "required": false,
                 "system": false,
                 "type": "bool"
+            },
+            {
+                "hidden": false,
+                "id": "json1587448267",
+                "maxSize": 0,
+                "name": "location",
+                "presentable": false,
+                "required": false,
+                "system": false,
+                "type": "json"
+            },
+            {
+                "hidden": false,
+                "id": "number3345280329",
+                "max": null,
+                "min": null,
+                "name": "durability",
+                "onlyInt": false,
+                "presentable": false,
+                "required": false,
+                "system": false,
+                "type": "number"
             },
             {
                 "hidden": false,

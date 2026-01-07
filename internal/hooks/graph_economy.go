@@ -190,8 +190,7 @@ func (g *GraphEconomy) processMachine(machineId string) (float64, string, error)
 		return 0, "", err
 	}
 
-	// Machine Data (Static) needs to be fetched based on `machine_id` field?
-	// Wait, `machines` collection has `machine_id` which likely refers to `items.ID` (e.g. "forestry_machine").
+	// Get machine static data
 	gamedataId := machine.GetString("machine_id")
 	itemDef := gamedata.GetItem(gamedataId)
 	if itemDef == nil {
@@ -200,19 +199,74 @@ func (g *GraphEconomy) processMachine(machineId string) (float64, string, error)
 
 	// Determine what it produces
 	outputItem := itemDef.Product
+	if outputItem == "" && itemDef.UseRecipe != "" {
+		// Get output from recipe
+		recipe := gamedata.GetRecipe(itemDef.UseRecipe)
+		if recipe != nil {
+			outputItem = recipe.OutputItem
+		}
+	}
 	if outputItem == "" {
 		return 0, "", nil // Not a producer
 	}
 
-	// 1. Calculate Production Cycles
-	// Using `production_started_at`
+	// Initialize lazy calculator
+	lazyCalc := NewLazyCalculator(g.app)
+
+	// === CHECK 1: DURABILITY ===
+	durability := machine.GetFloat("durability")
+	if durability <= 0 {
+		g.app.Logger().Info("[GRAPH] Machine stopped - no durability", "machineId", machineId)
+		return 0, outputItem, nil
+	}
+
+	// === CHECK 2: GLOBAL ENERGY ===
+	energyPercent := lazyCalc.CalculateGlobalEnergyPercent()
+	if energyPercent <= 0 {
+		// Workers resting - but MAINTENANCE can work!
+		g.app.Logger().Info("[GRAPH] Workers resting - checking maintenance", "machineId", machineId)
+
+		// Apply maintenance if any maintenance employees assigned
+		employeeIds := machine.GetStringSlice("employees")
+		totalMaintenanceSkill := 0
+		for _, empId := range employeeIds {
+			emp, err := g.app.FindRecordById("employees", empId)
+			if err == nil {
+				totalMaintenanceSkill += emp.GetInt("maintenance")
+			}
+		}
+
+		if totalMaintenanceSkill > 0 {
+			// Calculate time since last update
+			lastUpdate := machine.GetDateTime("updated").Time()
+			repairedDurability := lazyCalc.CalculateMachineDurability(durability, lastUpdate, totalMaintenanceSkill)
+
+			if repairedDurability > durability {
+				machine.Set("durability", repairedDurability)
+				g.app.Save(machine)
+				g.app.Logger().Info("[GRAPH] Maintenance applied",
+					"machineId", machineId,
+					"oldDurability", durability,
+					"newDurability", repairedDurability,
+					"maintenanceSkill", totalMaintenanceSkill)
+			}
+		}
+
+		return 0, outputItem, nil
+	}
+
+	// === CALCULATE PRODUCTION CYCLES ===
 	startedAtVal := machine.GetDateTime("production_started_at")
 	startedAt := startedAtVal.Time()
 
 	if startedAt.IsZero() {
-		// Initialize if zero (first run)
+		// Initialize production timestamp
 		startedAt = time.Now()
 		machine.Set("production_started_at", startedAt)
+		// Set initial durability if not set
+		if durability == 0 {
+			machine.Set("durability", float64(gamedata.MachineDurabilityOnPlace))
+		}
 		g.app.Save(machine)
 		return 0, outputItem, nil
 	}
@@ -221,112 +275,171 @@ func (g *GraphEconomy) processMachine(machineId string) (float64, string, error)
 	delta := now.Sub(startedAt).Seconds()
 	cycleTime := float64(itemDef.ProductionTime)
 	if cycleTime <= 0 {
-		cycleTime = 1 // Safety
+		cycleTime = float64(gamedata.DefaultHarvestCycle)
 	}
 
-	cyclesCompleted := math.Floor(delta / cycleTime)
-
+	cyclesCompleted := int(math.Floor(delta / cycleTime))
 	if cyclesCompleted < 1 {
 		return 0, outputItem, nil
 	}
 
-	// 2. Consume Inputs (Recursive Pull)
-	// Find inputs connected to this machine
-	_, err = g.app.FindRecordsByFilter(
-		"edge_relation",
-		fmt.Sprintf("output_type = 'machine' && output_id = '%s'", machine.Id),
+	// === GET EMPLOYEES AND CALCULATE BONUSES ===
+	employeeIds := machine.GetStringSlice("employees")
+	var totalMiningPower float64 = 0
+
+	for _, empId := range employeeIds {
+		emp, err := g.app.FindRecordById("employees", empId)
+		if err == nil {
+			totalMiningPower += float64(emp.GetInt("mining"))
+		}
+	}
+
+	// === PROCESS BASED ON MACHINE TYPE ===
+	var totalProduced float64
+	companyId := machine.GetString("company")
+
+	if itemDef.UseRecipe == "" {
+		// EXTRACTOR: No recipe, direct production
+		baseProduction := float64(itemDef.ProductQuantity)
+		if baseProduction <= 0 {
+			baseProduction = 1
+		}
+
+		// Apply mining bonus: base * (1 + totalMining/10)
+		miningMultiplier := 1.0
+		if totalMiningPower > 0 {
+			miningMultiplier = 1.0 + (totalMiningPower / 10.0)
+		}
+
+		// Apply energy efficiency
+		energyMultiplier := energyPercent / 100.0
+
+		totalProduced = float64(cyclesCompleted) * baseProduction * miningMultiplier * energyMultiplier
+
+	} else {
+		// FACTORY: Needs recipe inputs
+		recipe := gamedata.GetRecipe(itemDef.UseRecipe)
+		if recipe == nil {
+			return 0, outputItem, fmt.Errorf("recipe not found: %s", itemDef.UseRecipe)
+		}
+
+		// Calculate how many cycles we can actually complete based on available inputs
+		maxPossibleCycles := cyclesCompleted
+
+		for _, input := range recipe.Inputs {
+			// Check company inventory for this input
+			invRecords, _ := g.app.FindRecordsByFilter(
+				"inventory",
+				fmt.Sprintf("company = '%s' && item_id = '%s'", companyId, input.ItemID),
+				"",
+				1,
+				0,
+			)
+
+			availableQty := 0.0
+			if len(invRecords) > 0 {
+				availableQty = invRecords[0].GetFloat("quantity")
+			}
+
+			// How many cycles can this input support?
+			requiredPerCycle := float64(input.Quantity)
+			possibleCycles := int(availableQty / requiredPerCycle)
+
+			if possibleCycles < maxPossibleCycles {
+				maxPossibleCycles = possibleCycles
+			}
+		}
+
+		if maxPossibleCycles <= 0 {
+			g.app.Logger().Info("[GRAPH] Factory missing inputs", "machineId", machineId, "recipe", itemDef.UseRecipe)
+			return 0, outputItem, nil
+		}
+
+		// Consume inputs for the cycles we can complete
+		for _, input := range recipe.Inputs {
+			totalRequired := float64(input.Quantity * maxPossibleCycles)
+
+			invRecords, _ := g.app.FindRecordsByFilter(
+				"inventory",
+				fmt.Sprintf("company = '%s' && item_id = '%s'", companyId, input.ItemID),
+				"",
+				1,
+				0,
+			)
+
+			if len(invRecords) > 0 {
+				inv := invRecords[0]
+				currentQty := inv.GetFloat("quantity")
+				newQty := currentQty - totalRequired
+				if newQty <= 0 {
+					g.app.Delete(inv)
+				} else {
+					inv.Set("quantity", newQty)
+					g.app.Save(inv)
+				}
+			}
+		}
+
+		cyclesCompleted = maxPossibleCycles
+		outputQty := recipe.OutputQuantity
+		if outputQty <= 0 {
+			outputQty = 1
+		}
+		totalProduced = float64(cyclesCompleted * outputQty)
+	}
+
+	if totalProduced <= 0 {
+		return 0, outputItem, nil
+	}
+
+	// === UPDATE DURABILITY ===
+	newDurability := durability - float64(cyclesCompleted)
+	if newDurability < 0 {
+		newDurability = 0
+	}
+	machine.Set("durability", newDurability)
+
+	// === UPDATE PRODUCTION TIMESTAMP ===
+	newStart := startedAt.Add(time.Duration(float64(cyclesCompleted) * cycleTime * float64(time.Second)))
+	machine.Set("production_started_at", newStart)
+
+	// === PERSIST TO INVENTORY ===
+	invRecords, _ := g.app.FindRecordsByFilter(
+		"inventory",
+		fmt.Sprintf("company = '%s' && item_id = '%s'", companyId, outputItem),
 		"",
-		0,
+		1,
 		0,
 	)
 
-	// Logic: We need ingredients for `cyclesCompleted` batches.
-	// Can we pull enough?
-	// For MVP, we assume "Try to fullfil all cycles". If input fails, we reduce cycles?
-	// Or simplistic: Just pull what is available and limit cycles.
-	// This "Pull" logic for consumption is complex because inputs might be other machines.
-	// If Input is a Deposit, we effectively "Mine" it just-in-time for this machine cycle.
-
-	// WARNING: Just-in-time pulling for consumption might mine the deposit.
-	// If we mine 10 from deposit, but only need 5, do we void the 5?
-	// Or does the machine have an input buffer?
-	// The User said: "In every action... read the graph from top to bottom".
-	// The User also said "Inventory of a Machine, we calculate latest action".
-	// Implicitly, Machines process using buffers.
-	// But `machines` schema DOES NOT have input buffers (only `stored_energy`).
-	// So it's "Direct Flow" or "Virtual Buffer"?
-
-	// Assumption for MVP Graph:
-	// We maximize cycles based on Inputs Available.
-	// We iterate inputs, Pull from them.
-	// We verify if we have enough for 1 cycle, then N cycles.
-
-	// Note: Recipe requirements logic is needed here (e.g. 2 Wood -> 1 Plank).
-	// `itemDef.UseRecipe` gives us the ingredients.
-	// But `itemDef` struct in gamedata (`items.go`) handles `UseRecipe`.
-	// I need access to Recipe definitions. `gamedata/recipes.go`?
-	// I haven't seen `recipes.go`.
-
-	// Shortcut: If `itemDef.Product` is set, check if `CanConsume` or `UseRecipe` is set.
-	// If no inputs required (e.g. Forestry Machine?), we just produce.
-	// Forestry Machine: `Product: "wood"`. No `UseRecipe`.
-	// So it generates from nothing (Manual/Labor).
-	// Check employees for Labor logic?
-	// `MaxEmployee`.
-	// If no logic for input ingredients, we just assume Labor/Energy is satisfied or check it.
-
-	// Let's implement simplest "No Input" Machines first (Extractors).
-	if itemDef.UseRecipe == "" {
-		// Extractor / Generator
-		// Check Energy/Labor if we want to be strict.
-		// For now, assume operation if cycles passed.
-
-		totalProduced := cyclesCompleted * float64(itemDef.ProductQuantity)
-		if totalProduced == 0 {
-			// fallback if quantity not set
-			totalProduced = cyclesCompleted
-		}
-
-		// Update Production Start Time
-		// We advance it by cycles * cycleTime (preserving partial progress)
-		newStart := startedAt.Add(time.Duration(cyclesCompleted * cycleTime * float64(time.Second)))
-		machine.Set("production_started_at", newStart)
-
-		// PERSIST INVENTORY
-		// Check for existing inventory linked to this machine
-		inventoryRecords, _ := g.app.FindRecordsByFilter(
-			"inventory",
-			fmt.Sprintf("linked_storage = '%s' && item = '%s'", machineId, outputItem),
-			"",
-			1,
-			0,
-		)
-
-		var invRecord *core.Record
-		if len(inventoryRecords) > 0 {
-			invRecord = inventoryRecords[0]
-			invRecord.Set("quantity", invRecord.GetFloat("quantity")+totalProduced)
-		} else {
-			collection, _ := g.app.FindCollectionByNameOrId("inventory")
-			invRecord = core.NewRecord(collection)
-			invRecord.Set("company", machine.GetString("company")) // Machine belongs to company
-			invRecord.Set("item", outputItem)
-			invRecord.Set("quantity", totalProduced)
-			invRecord.Set("linked_storage", machineId)
-		}
-
-		if err := g.app.Save(invRecord); err != nil {
-			return 0, outputItem, err
-		}
-
-		// Save machine state (timestamp)
-		g.app.Save(machine)
-
-		return totalProduced, outputItem, nil
+	var invRecord *core.Record
+	if len(invRecords) > 0 {
+		invRecord = invRecords[0]
+		invRecord.Set("quantity", invRecord.GetFloat("quantity")+totalProduced)
 	} else {
-		// Machine NEEDS inputs (Factory).
-		// TODO: Implement Recipe Pulling.
-		// For now, return 0 to be safe and avoiding infinite recursion without checks.
-		return 0, outputItem, nil
+		collection, _ := g.app.FindCollectionByNameOrId("inventory")
+		invRecord = core.NewRecord(collection)
+		invRecord.Set("company", companyId)
+		invRecord.Set("item_id", outputItem)
+		invRecord.Set("quantity", totalProduced)
 	}
+
+	if err := g.app.Save(invRecord); err != nil {
+		return 0, outputItem, err
+	}
+
+	// Save machine state
+	if err := g.app.Save(machine); err != nil {
+		g.app.Logger().Error("[GRAPH] Failed to save machine state", "err", err)
+	}
+
+	g.app.Logger().Info("[GRAPH] Production complete",
+		"machineId", machineId,
+		"cycles", cyclesCompleted,
+		"produced", totalProduced,
+		"item", outputItem,
+		"durability", newDurability,
+	)
+
+	return totalProduced, outputItem, nil
 }

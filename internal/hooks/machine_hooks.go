@@ -37,6 +37,7 @@ func registerMachineHooks(app *pocketbase.PocketBase, inv *InventoryLogic, graph
 		companyId := record.GetString("company")
 		machineItemId := record.GetString("machine_id")
 		employeeIds := record.GetStringSlice("employees")
+		depositId := record.GetString("deposit")
 
 		if companyId == "" || machineItemId == "" {
 			return apis.NewBadRequestError("ID de compagnie ou de machine manquant.", nil)
@@ -66,7 +67,35 @@ func registerMachineHooks(app *pocketbase.PocketBase, inv *InventoryLogic, graph
 			}
 		}
 
-		// 3. ATOMIC: Check and Deduct Inventory using transaction
+		// 3. VALIDATE DEPOSIT CAPACITY (if assigning to deposit)
+		if depositId != "" {
+			deposit, err := app.FindRecordById("deposits", depositId)
+			if err != nil {
+				return apis.NewBadRequestError("Gisement introuvable.", nil)
+			}
+
+			size := deposit.GetInt("size")
+			if size <= 0 {
+				size = 1
+			}
+
+			maxMachines := gamedata.GetMaxMachinesForDeposit(size)
+
+			// Count current machines on this deposit
+			currentMachines, _ := app.FindRecordsByFilter("machines",
+				fmt.Sprintf("deposit = '%s'", depositId), "", 0, 0)
+
+			if len(currentMachines) >= maxMachines {
+				return apis.NewBadRequestError(fmt.Sprintf(
+					"Ce gisement (taille %d) ne peut accueillir que %d machine(s). Déjà %d assignée(s).",
+					size, maxMachines, len(currentMachines)), nil)
+			}
+		}
+
+		// 4. SET INITIAL DURABILITY
+		record.Set("durability", float64(gamedata.MachineDurabilityOnPlace))
+
+		// 5. ATOMIC: Check and Deduct Inventory using transaction
 		// This prevents race conditions when multiple machines are created simultaneously
 		var deductErr error
 		txErr := app.RunInTransaction(func(txApp core.App) error {

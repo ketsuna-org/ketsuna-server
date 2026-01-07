@@ -21,27 +21,46 @@ const (
 	EnergyTypeManuel      EnergyType = "Manuel"
 )
 
+// MachineMetadata contains machine-specific configuration
+// Supports multi-recipe machines and durability tracking
+type MachineMetadata struct {
+	AvailableRecipes   []string   `json:"available_recipes,omitempty"`    // List of recipe IDs this machine can execute
+	DefaultProduct     string     `json:"default_product,omitempty"`      // For extractors: direct product without recipe
+	ProductQuantity    int        `json:"product_quantity,omitempty"`     // Quantity produced per cycle
+	ProductionTime     int        `json:"production_time,omitempty"`      // Seconds per production cycle
+	MaxEmployee        int        `json:"max_employee,omitempty"`         // Max workers assignable
+	MaxMaintenance     int        `json:"max_maintenance,omitempty"`      // Max maintenance workers (default 1)
+	NeedEnergy         float64    `json:"need_energy,omitempty"`          // Energy required to operate
+	EnergyType         EnergyType `json:"energy_type,omitempty"`          // Energy source type
+	DurabilityPerCycle float64    `json:"durability_per_cycle,omitempty"` // Durability loss per cycle (default 1)
+	ProduceEnergy      float64    `json:"produce_energy,omitempty"`       // For generators: energy produced
+	CanConsume         []string   `json:"can_consume,omitempty"`          // For generators: fuel item IDs
+}
+
 // Item represents a static game item definition
 type Item struct {
-	ID              string     `json:"id"`
-	Name            string     `json:"name"`
-	Type            ItemType   `json:"type"`
-	BasePrice       float64    `json:"base_price"`
-	Volatility      float64    `json:"volatility"`
-	Product         string     `json:"product,omitempty"`          // For machines: what item they produce
-	ProductQuantity int        `json:"product_quantity,omitempty"` // Quantity produced per cycle
-	UseRecipe       string     `json:"use_recipe,omitempty"`       // Recipe ID for production
-	ProductionTime  int        `json:"production_time,omitempty"`  // Seconds per production cycle
-	MaxEmployee     int        `json:"max_employee,omitempty"`     // Max workers per machine
-	CanStore        []string   `json:"can_store,omitempty"`        // Item IDs this storage can hold
-	ProduceEnergy   float64    `json:"produce_energy,omitempty"`   // Energy produced per cycle
-	CanConsume      []string   `json:"can_consume,omitempty"`      // Fuel item IDs
-	CanStoreEnergy  float64    `json:"can_store_energy,omitempty"` // Battery capacity
-	NeedEnergy      float64    `json:"need_energy,omitempty"`      // Energy required to operate
+	ID           string   `json:"id"`
+	Name         string   `json:"name"`
+	Type         ItemType `json:"type"`
+	BasePrice    float64  `json:"base_price"`
+	Volatility   float64  `json:"volatility,omitempty"`
+	Icon         string   `json:"icon,omitempty"`
+	Minable      bool     `json:"minable"`       // Can be harvested by CEO
+	IsExplorable bool     `json:"is_explorable"` // Can be found via exploration
+	// Machine-specific fields (deprecated, use Metadata)
+	Product         string     `json:"product,omitempty"`
+	ProductQuantity int        `json:"product_quantity,omitempty"`
+	UseRecipe       string     `json:"use_recipe,omitempty"`
+	ProductionTime  int        `json:"production_time,omitempty"`
+	MaxEmployee     int        `json:"max_employee,omitempty"`
+	CanStore        []string   `json:"can_store,omitempty"`
+	ProduceEnergy   float64    `json:"produce_energy,omitempty"`
+	CanConsume      []string   `json:"can_consume,omitempty"`
+	CanStoreEnergy  float64    `json:"can_store_energy,omitempty"`
+	NeedEnergy      float64    `json:"need_energy,omitempty"`
 	EnergyType      EnergyType `json:"energy_type,omitempty"`
-	Minable         bool       `json:"minable"`       // Can be harvested by CEO
-	IsExplorable    bool       `json:"is_explorable"` // Can be found via exploration
-	Icon            string     `json:"icon,omitempty"`
+	// New: Structured metadata for machines
+	Metadata *MachineMetadata `json:"metadata,omitempty"`
 }
 
 // =============================================================================
@@ -200,9 +219,17 @@ var Items = map[string]Item{
 		MaxEmployee: 3, NeedEnergy: 8, EnergyType: EnergyTypeElectricite, Icon: "/icons/mining_extractor.png",
 	},
 	"iron_extractor": {
-		ID: "iron_extractor", Name: "Extraction Minière de Fer", Type: ItemTypeMachine,
-		BasePrice: 18234, Product: "iron_ore", ProductQuantity: 5, ProductionTime: 50,
-		MaxEmployee: 3, NeedEnergy: 8, EnergyType: EnergyTypeElectricite, Icon: "/icons/mining_extractor.png",
+		ID:              "iron_extractor",
+		Name:            "Extraction Minière de Fer",
+		Type:            ItemTypeMachine,
+		BasePrice:       18234,
+		Product:         "iron_ore",
+		ProductQuantity: 5,
+		ProductionTime:  50,
+		MaxEmployee:     3,
+		NeedEnergy:      8,
+		EnergyType:      EnergyTypeElectricite,
+		Icon:            "/icons/mining_extractor.png",
 	},
 
 	// -------------------------------------------------------------------------
