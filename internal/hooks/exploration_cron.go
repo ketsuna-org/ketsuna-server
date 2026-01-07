@@ -43,7 +43,7 @@ func ResolveExplorations(app *pocketbase.PocketBase) {
 func processExplorationResult(app *pocketbase.PocketBase, exploration *core.Record) {
 	// 50% chance of success for now
 	// TODO: Adjust based on tech or company stats
-	successRate := 0.98
+	successRate := 0.40
 	roll := rand.Float64()
 
 	isSuccess := roll <= successRate
@@ -65,7 +65,7 @@ func processExplorationResult(app *pocketbase.PocketBase, exploration *core.Reco
 		depositsCollection, _ := app.FindCollectionByNameOrId("deposits")
 		deposit := core.NewRecord(depositsCollection)
 		deposit.Set("company", companyId)
-		deposit.Set("ressource_id", resourceId) // Corrected field name from schema update 'ressource'
+		deposit.Set("ressource_id", resourceId)
 		deposit.Set("quantity", quantity)
 		deposit.Set("size", size)
 
