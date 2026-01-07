@@ -40,6 +40,16 @@ func registerInventoryEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, 
 			return apis.NewBadRequestError("Aucune entreprise active pour cet utilisateur", nil)
 		}
 
+		// Graph Economy: Pull Updates BEFORE transaction to avoid deadlock
+		// (graph uses g.app while transaction uses txApp - they can't share locks)
+		if graph != nil {
+			_, err := graph.CalculateCompanyInventory(companyId)
+			if err != nil {
+				app.Logger().Error("Graph calc failed during sell", "err", err)
+				// Continue anyway - we'll sell from stored inventory
+			}
+		}
+
 		return app.RunInTransaction(func(txApp core.App) error {
 			company, err := txApp.FindRecordById("companies", companyId)
 			if err != nil {
@@ -47,18 +57,6 @@ func registerInventoryEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, 
 			}
 			if company.GetString("ceo") != authRecord.Id {
 				return apis.NewForbiddenError("Accès refusé", nil)
-			}
-
-			// Graph Economy: Pull Updates before action
-			if graph != nil {
-				_, err := graph.CalculateCompanyInventory(companyId)
-				if err != nil {
-					txApp.Logger().Error("Graph calc failed during sell", "err", err)
-					// We proceed anyway, relying on stored inventory?
-					// Or fail? User said "we need to check the graph".
-					// If graph fails, we might be selling outdated items, or preventing sale of generated items.
-					// Let's log and proceed, assuming consistency.
-				}
 			}
 
 			result, err := inv.SellInventory(txApp, companyId, data.ItemId, int(data.Quantity))
