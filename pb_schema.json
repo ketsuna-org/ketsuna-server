@@ -1329,6 +1329,19 @@
                 "type": "relation"
             },
             {
+                "cascadeDelete": false,
+                "collectionId": "pbc_2978010612",
+                "hidden": false,
+                "id": "relation352706436",
+                "maxSelect": 1,
+                "minSelect": 0,
+                "name": "machine",
+                "presentable": false,
+                "required": false,
+                "system": false,
+                "type": "relation"
+            },
+            {
                 "hidden": false,
                 "id": "number4197444555",
                 "max": 10,
@@ -1494,6 +1507,19 @@
                     "Echec",
                     "Succès"
                 ]
+            },
+            {
+                "cascadeDelete": false,
+                "collectionId": "pbc_3735627160",
+                "hidden": false,
+                "id": "relation_emp_exp",
+                "maxSelect": 1,
+                "minSelect": 0,
+                "name": "employee",
+                "presentable": false,
+                "required": false,
+                "system": false,
+                "type": "relation"
             },
             {
                 "hidden": false,
@@ -1667,19 +1693,6 @@
                 "required": false,
                 "system": false,
                 "type": "text"
-            },
-            {
-                "cascadeDelete": false,
-                "collectionId": "pbc_3735627160",
-                "hidden": false,
-                "id": "relation3129131776",
-                "maxSelect": 999,
-                "minSelect": 0,
-                "name": "employees",
-                "presentable": false,
-                "required": false,
-                "system": false,
-                "type": "relation"
             },
             {
                 "cascadeDelete": true,

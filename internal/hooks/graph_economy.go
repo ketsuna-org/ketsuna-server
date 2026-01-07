@@ -227,13 +227,10 @@ func (g *GraphEconomy) processMachine(machineId string) (float64, string, error)
 		g.app.Logger().Info("[GRAPH] Workers resting - checking maintenance", "machineId", machineId)
 
 		// Apply maintenance if any maintenance employees assigned
-		employeeIds := machine.GetStringSlice("employees")
+		assignedEmployees, _ := g.app.FindRecordsByFilter("employees", fmt.Sprintf("machine = '%s'", machineId), "", 100, 0)
 		totalMaintenanceSkill := 0
-		for _, empId := range employeeIds {
-			emp, err := g.app.FindRecordById("employees", empId)
-			if err == nil {
-				totalMaintenanceSkill += emp.GetInt("maintenance")
-			}
+		for _, emp := range assignedEmployees {
+			totalMaintenanceSkill += emp.GetInt("maintenance")
 		}
 
 		if totalMaintenanceSkill > 0 {
@@ -284,14 +281,11 @@ func (g *GraphEconomy) processMachine(machineId string) (float64, string, error)
 	}
 
 	// === GET EMPLOYEES AND CALCULATE BONUSES ===
-	employeeIds := machine.GetStringSlice("employees")
+	assignedEmployees, _ := g.app.FindRecordsByFilter("employees", fmt.Sprintf("machine = '%s'", machineId), "", 100, 0)
 	var totalMiningPower float64 = 0
 
-	for _, empId := range employeeIds {
-		emp, err := g.app.FindRecordById("employees", empId)
-		if err == nil {
-			totalMiningPower += float64(emp.GetInt("mining"))
-		}
+	for _, emp := range assignedEmployees {
+		totalMiningPower += float64(emp.GetInt("mining"))
 	}
 
 	// === PROCESS BASED ON MACHINE TYPE ===
@@ -314,7 +308,43 @@ func (g *GraphEconomy) processMachine(machineId string) (float64, string, error)
 		// Apply energy efficiency
 		energyMultiplier := energyPercent / 100.0
 
-		totalProduced = float64(cyclesCompleted) * baseProduction * miningMultiplier * energyMultiplier
+		// Max possible production based on cycles
+		potentialProduction := float64(cyclesCompleted) * baseProduction * miningMultiplier * energyMultiplier
+
+		// Check Deposit availability
+		depositId := machine.GetString("deposit")
+		if depositId != "" {
+			deposit, err := g.app.FindRecordById("deposits", depositId)
+			if err != nil {
+				return 0, outputItem, err
+			}
+
+			// Verify resource match (optional but good)
+			// depResource := deposit.GetString("ressource_id")
+			// if depResource != outputItem { ... }
+
+			currentQty := deposit.GetFloat("quantity")
+			if potentialProduction > currentQty {
+				potentialProduction = currentQty
+			}
+
+			if potentialProduction > 0 {
+				deposit.Set("quantity", currentQty-potentialProduction)
+				if err := g.app.Save(deposit); err != nil {
+					return 0, outputItem, err
+				}
+				totalProduced = potentialProduction
+			}
+		} else {
+			// If no deposit, maybe it's a generator or magic?
+			// Logic dictates extractors need deposits.
+			// If it has no deposit, we might assume 0 production or let it run free?
+			// Given the game context, let's assume 0 if it's supposed to be on a deposit.
+			// But we can check if it requires a deposit (placed check).
+			// For now, let's assume if it has no recipe, it needs a deposit.
+			totalProduced = 0
+			g.app.Logger().Info("[GRAPH] Extractor has no deposit", "machineId", machineId)
+		}
 
 	} else {
 		// FACTORY: Needs recipe inputs

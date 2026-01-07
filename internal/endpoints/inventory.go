@@ -2,11 +2,13 @@ package endpoints
 
 import (
 	"fmt"
-	"math"
+	"sort"
+	"strings"
 
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
+	"ketsuna.com/server/internal/gamedata"
 	"ketsuna.com/server/internal/hooks"
 )
 
@@ -103,19 +105,15 @@ func registerInventoryEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, 
 				return apis.NewForbiddenError("Seul le PDG peut acheter", nil)
 			}
 
-			item, err := txApp.FindRecordById("items", data.ItemId)
-			if err != nil {
-				return apis.NewBadRequestError("Item introuvable", nil)
+			// 1. Get Static Item
+			item := gamedata.GetItem(data.ItemId) // Static lookup
+			if item == nil {
+				return apis.NewBadRequestError("Item introuvable", nil) // Logic Fix
 			}
 
-			// Block purchase of minable items - REMOVED (Minable items are buyable and unlimited)
-			// if item.GetBool("minable") {
-			// 	return apis.NewBadRequestError("Les ressources brutes ne peuvent pas être achetées. Récoltez-les manuellement !", nil)
-			// }
-
-			// Check technology requirement
-			requiredTechId := item.GetString("required_tech")
-			if requiredTechId != "" {
+			// 2. Check Tech Requirements
+			isLocked, requiredTechId := gamedata.IsItemUnlockedByTech(item.ID)
+			if isLocked {
 				// Check if company has this technology
 				_, err := txApp.FindFirstRecordByFilter(
 					"company_techs",
@@ -126,86 +124,90 @@ func registerInventoryEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, 
 				}
 			}
 
-			// Check Stock (market_demand)
-			// Minable items are UNLIMITED (no stock check)
-			marketStock := item.GetInt("market_demand")
-			isMinable := item.GetBool("minable")
+			// 3. Calculate Cost
+			totalCost := item.BasePrice * float64(data.Quantity)
+			currentBalance := company.GetFloat("balance")
 
-			if !isMinable {
-				if marketStock <= 0 {
-					return apis.NewBadRequestError("Rupture de stock ! Nexa-Bank n'a plus cet item disponible aujourd'hui.", nil)
-				}
-				if marketStock < data.Quantity {
-					return apis.NewBadRequestError(fmt.Sprintf("Stock insuffisant. Disponible: %d, Demandé: %d", marketStock, data.Quantity), nil)
-				}
-				// We update stock later
+			if currentBalance < totalCost {
+				return apis.NewBadRequestError(fmt.Sprintf("Fonds insuffisants. Coût: %.2f€, Solde: %.2f€", totalCost, currentBalance), nil)
 			}
 
-			itemPrice := item.GetFloat("base_price") // Changed to Float
-			totalCost := itemPrice * float64(data.Quantity)
-			current := company.GetFloat("balance") // Changed to Float
-			if current < totalCost {
-				return apis.NewBadRequestError(fmt.Sprintf("Fonds insuffisants. Coût: %.2f€, Solde: %.2f€", totalCost, current), nil)
-			}
+			var resultRecord *core.Record
 
-			// Check existing inventory
-			existing, _ := txApp.FindFirstRecordByFilter("inventory", fmt.Sprintf("company='%s' && item='%s'", companyId, data.ItemId))
-			if existing != nil {
-				curr := existing.GetInt("quantity")
-				existing.Set("quantity", curr+data.Quantity)
-				if err := txApp.Save(existing); err != nil {
-					return apis.NewBadRequestError("Erreur mise à jour inventaire", err)
-				}
-			} else {
-				collection, err := txApp.FindCollectionByNameOrId("inventory")
+			// 4. Handle Purchase based on Type
+			if item.Type == gamedata.ItemTypeMachine {
+				// Machines -> 'machines' collection
+				machinesCollection, err := txApp.FindCollectionByNameOrId("machines")
 				if err != nil {
-					return apis.NewBadRequestError("Erreur collection", err)
+					return err
 				}
-				newRecord := core.NewRecord(collection)
-				newRecord.Set("company", companyId)
-				newRecord.Set("item", data.ItemId)
-				newRecord.Set("quantity", data.Quantity)
-				if err := txApp.Save(newRecord); err != nil {
-					return apis.NewBadRequestError("Erreur création inventaire", err)
+
+				for i := 0; i < data.Quantity; i++ {
+					machineRecord := core.NewRecord(machinesCollection)
+					machineRecord.Set("company", companyId)
+					machineRecord.Set("machine_id", item.ID) // Text field
+					machineRecord.Set("durability", 100)
+					machineRecord.Set("placed", false)
+					machineRecord.Set("stored_energy", 0)
+					machineRecord.Set("production_started_at", "") // not started
+
+					if err := txApp.Save(machineRecord); err != nil {
+						return apis.NewBadRequestError("Erreur lors de la création de la machine", err)
+					}
+					resultRecord = machineRecord // Return last created machine
 				}
-				existing = newRecord
+
+			} else {
+				// Everyone else -> 'inventory' collection
+				// Check existing inventory
+				// Note: using item_id field because we don't have item relation anymore or rely on it
+				existing, _ := txApp.FindFirstRecordByFilter(
+					"inventory",
+					fmt.Sprintf("company='%s' && item_id='%s'", companyId, item.ID),
+				)
+
+				if existing != nil {
+					newQty := existing.GetInt("quantity") + data.Quantity
+					existing.Set("quantity", newQty)
+					if err := txApp.Save(existing); err != nil {
+						return apis.NewBadRequestError("Erreur mise à jour inventaire", err)
+					}
+					resultRecord = existing
+				} else {
+					invCollection, err := txApp.FindCollectionByNameOrId("inventory")
+					if err != nil {
+						return err
+					}
+					newItem := core.NewRecord(invCollection)
+					newItem.Set("company", companyId)
+					newItem.Set("item_id", item.ID)
+					newItem.Set("quantity", data.Quantity)
+					if err := txApp.Save(newItem); err != nil {
+						return apis.NewBadRequestError("Erreur création inventaire", err)
+					}
+					resultRecord = newItem
+				}
 			}
 
-			// Deduct balance
-			company.Set("balance", current-totalCost)
+			// 5. Update Company Balance
+			company.Set("balance", currentBalance-totalCost)
 			if err := txApp.Save(company); err != nil {
 				return apis.NewBadRequestError("Erreur sauvegarde entreprise", err)
 			}
 
-			app.Logger().Info("[PURCHASE] Company purchased item", "companyId", companyId, "itemId", data.ItemId, "qty", data.Quantity, "totalCost", totalCost)
-
-			// Update Market Data (Stock & Price)
-			if !isMinable {
-				item.Set("market_demand", marketStock-data.Quantity)
-			}
-
-			// Dynamic Pricing (Only for Machines)
-			if item.GetString("type") == "Machine" {
-				priceFactor := 0.005
-				newPrice := itemPrice * (1 + float64(data.Quantity)*priceFactor)
-				item.Set("base_price", math.Round(newPrice*100)/100)
-			}
-
-			if err := txApp.Save(item); err != nil {
-				return apis.NewBadRequestError("Erreur sauvegarde item", err)
-			}
+			app.Logger().Info("[PURCHASE] Company purchased item", "companyId", companyId, "itemId", item.ID, "qty", data.Quantity, "totalCost", totalCost)
 
 			return c.JSON(200, map[string]interface{}{
-				"success":        true,
-				"message":        "Achat réussi",
-				"record":         existing,
-				"cost":           totalCost,
-				"remainingStock": marketStock - data.Quantity,
+				"success": true,
+				"message": "Achat réussi",
+				"record":  resultRecord,
+				"cost":    totalCost,
 			})
 		})
 	})
 
 	// POST /api/market/list - Get paginated market items with tech filtering
+	// POST /api/market/list - Get paginated market items with tech filtering (Static Data)
 	e.Router.POST("/api/market/list", func(c *core.RequestEvent) error {
 		authRecord := c.Auth
 		if authRecord == nil {
@@ -230,9 +232,6 @@ func registerInventoryEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, 
 		if data.PerPage < 1 {
 			data.PerPage = 16
 		}
-		if data.Sort == "" {
-			data.Sort = "name"
-		}
 
 		companyId := authRecord.GetString("active_company")
 		if companyId == "" {
@@ -243,43 +242,62 @@ func registerInventoryEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, 
 		companyTechs, _ := app.FindRecordsByFilter("company_techs", fmt.Sprintf("company = '%s'", companyId), "", 1000, 0)
 		unlockedTechs := make(map[string]bool)
 		for _, ct := range companyTechs {
-			techId := ct.GetString("technology")
+			// Schema uses 'technology_id'
+			techId := ct.GetString("technology_id")
 			if techId != "" {
 				unlockedTechs[techId] = true
 			}
 		}
 
-		// 2. Build Base Filter (DB side)
-		// Only fetch candidate items to reduce memory usage slightly
-		dbFilter := "type != 'Produit Fini' && minable = false"
-		if data.Search != "" {
-			dbFilter += fmt.Sprintf(" && name ~ '%s'", data.Search)
-		}
-		if data.Type != "" {
-			dbFilter += fmt.Sprintf(" && type = '%s'", data.Type)
-		}
+		// 2. Fetch Static Items
+		allItems := gamedata.GetAllItems()
+		var candidates []gamedata.Item
 
-		// Fetch ALL matching items (high limit)
-		// Note: We handle sorting in DB if possible, but filtering might break pagination if done after.
-		// So we must fetch ALL candidates, filter them in Go, THEN sort/paginate.
-		// Sorting in DB first is okay, we preserve order if we iterate in order.
-		allCandidates, err := app.FindRecordsByFilter("items", dbFilter, data.Sort, 1000, 0)
-		if err != nil {
-			return apis.NewBadRequestError("Erreur lors de la recherche DB", err)
-		}
+		searchLower := strings.ToLower(data.Search)
 
-		// 3. Filter by Technology (Go side)
-		var validItems []*core.Record
-		for _, item := range allCandidates {
-			reqTech := item.GetString("required_tech")
-			// If no tech required OR tech is unlocked
-			if reqTech == "" || unlockedTechs[reqTech] {
-				validItems = append(validItems, item)
+		for _, item := range allItems {
+			// Filter Type: Only Machine & Stockage
+			if item.Type != gamedata.ItemTypeMachine && item.Type != gamedata.ItemTypeStockage {
+				continue
 			}
+
+			// Filter Type from request (if specified) e.g. "Machine" vs "Stockage"
+			if data.Type != "" && string(item.Type) != data.Type {
+				continue
+			}
+
+			// Filter Search
+			if searchLower != "" {
+				if !strings.Contains(strings.ToLower(item.Name), searchLower) {
+					continue
+				}
+			}
+
+			// Filter Tech
+			isUnlocked, techID := gamedata.IsItemUnlockedByTech(item.ID)
+			// gamedata logic: IsItemUnlockedByTech returns true if item requires tech.
+			// The function name is IsItemUnlockedByTech...
+			// Wait, let me check definition in Step 509 lines 196:
+			// func IsItemUnlockedByTech(itemId string) (bool, string)
+			// "checks if an item ID is unlocked by any technology"
+			// returns (true, techID) if it IS unlocked by a tech.
+			// So if true, we MUST have that tech unlocked.
+			if isUnlocked {
+				if !unlockedTechs[techID] {
+					continue // Logic: Item requires tech, but we don't have it -> Skip
+				}
+			}
+
+			candidates = append(candidates, item)
 		}
 
-		// 4. Pagination (Go side)
-		totalItems := len(validItems)
+		// 3. Sort (By Name default)
+		sort.Slice(candidates, func(i, j int) bool {
+			return candidates[i].Name < candidates[j].Name
+		})
+
+		// 4. Pagination
+		totalItems := len(candidates)
 		totalPages := (totalItems + data.PerPage - 1) / data.PerPage
 
 		start := (data.Page - 1) * data.PerPage
@@ -291,20 +309,11 @@ func registerInventoryEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, 
 			end = totalItems
 		}
 
-		var paginatedItems []*core.Record
+		var paginatedItems []gamedata.Item
 		if start < totalItems {
-			paginatedItems = validItems[start:end]
+			paginatedItems = candidates[start:end]
 		} else {
-			paginatedItems = []*core.Record{}
-		}
-
-		// 5. Expand relations
-		for _, record := range paginatedItems {
-			app.ExpandRecord(record, []string{"use_recipe", "product", "can_consume"}, nil)
-			if recipe := record.ExpandedOne("use_recipe"); recipe != nil {
-				// Nested expand for recipe inputs/output
-				app.ExpandRecord(recipe, []string{"inputs_items", "output_item"}, nil)
-			}
+			paginatedItems = []gamedata.Item{}
 		}
 
 		return c.JSON(200, map[string]interface{}{
@@ -315,4 +324,45 @@ func registerInventoryEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, 
 			"totalPages": totalPages,
 		})
 	})
+
+	// POST /api/inventory/refresh - Trigger lazy calculation and pull production into inventory
+	e.Router.POST("/api/inventory/refresh", func(c *core.RequestEvent) error {
+		authRecord := c.Auth
+		if authRecord == nil {
+			return apis.NewUnauthorizedError("Non connecté", nil)
+		}
+
+		companyId := authRecord.GetString("active_company")
+		if companyId == "" {
+			return apis.NewBadRequestError("Aucune entreprise active", nil)
+		}
+
+		// Verify company ownership
+		company, err := app.FindRecordById("companies", companyId)
+		if err != nil {
+			return apis.NewBadRequestError("Entreprise introuvable", nil)
+		}
+		if company.GetString("ceo") != authRecord.Id && !authRecord.IsSuperuser() {
+			return apis.NewForbiddenError("Accès refusé", nil)
+		}
+
+		// Trigger lazy calculation
+		if graph == nil {
+			return apis.NewBadRequestError("Graph economy non initialisé", nil)
+		}
+
+		producedItems, err := graph.CalculateCompanyInventory(companyId)
+		if err != nil {
+			app.Logger().Error("[REFRESH] Graph calculation failed", "err", err)
+			return apis.NewBadRequestError("Erreur lors du calcul de production", err)
+		}
+
+		app.Logger().Info("[REFRESH] Lazy calculation completed", "company", companyId, "producedItems", len(producedItems))
+
+		return c.JSON(200, map[string]interface{}{
+			"success":       true,
+			"producedItems": producedItems,
+			"message":       fmt.Sprintf("%d type(s) d'items produits", len(producedItems)),
+		})
+	}).Bind(apis.RequireAuth())
 }

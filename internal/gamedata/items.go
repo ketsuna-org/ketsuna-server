@@ -11,6 +11,15 @@ const (
 	ItemTypeStockage       ItemType = "Stockage"
 )
 
+// Unit represents the unit of measurement for an item
+type Unit string
+
+const (
+	UnitKg   Unit = "kg"
+	UnitL    Unit = "l"
+	UnitUnit Unit = "u"
+)
+
 // EnergyType represents the energy source type
 type EnergyType string
 
@@ -24,17 +33,20 @@ const (
 // MachineMetadata contains machine-specific configuration
 // Supports multi-recipe machines and durability tracking
 type MachineMetadata struct {
-	AvailableRecipes   []string   `json:"available_recipes,omitempty"`    // List of recipe IDs this machine can execute
-	DefaultProduct     string     `json:"default_product,omitempty"`      // For extractors: direct product without recipe
-	ProductQuantity    int        `json:"product_quantity,omitempty"`     // Quantity produced per cycle
-	ProductionTime     int        `json:"production_time,omitempty"`      // Seconds per production cycle
-	MaxEmployee        int        `json:"max_employee,omitempty"`         // Max workers assignable
-	MaxMaintenance     int        `json:"max_maintenance,omitempty"`      // Max maintenance workers (default 1)
-	NeedEnergy         float64    `json:"need_energy,omitempty"`          // Energy required to operate
-	EnergyType         EnergyType `json:"energy_type,omitempty"`          // Energy source type
-	DurabilityPerCycle float64    `json:"durability_per_cycle,omitempty"` // Durability loss per cycle (default 1)
-	ProduceEnergy      float64    `json:"produce_energy,omitempty"`       // For generators: energy produced
-	CanConsume         []string   `json:"can_consume,omitempty"`          // For generators: fuel item IDs
+	AvailableRecipes      []string   `json:"available_recipes,omitempty"`       // List of recipe IDs this machine can execute
+	DefaultProduct        string     `json:"default_product,omitempty"`         // For extractors: direct product without recipe
+	ProductQuantity       int        `json:"product_quantity,omitempty"`        // Quantity produced per cycle
+	ProductionTime        int        `json:"production_time,omitempty"`         // Seconds per production cycle
+	MaxEmployee           int        `json:"max_employee,omitempty"`            // Max workers assignable
+	MaxMaintenance        int        `json:"max_maintenance,omitempty"`         // Max maintenance workers (default 1)
+	NeedEnergy            float64    `json:"need_energy,omitempty"`             // Energy required to operate
+	EnergyType            EnergyType `json:"energy_type,omitempty"`             // Energy source type
+	DurabilityPerCycle    float64    `json:"durability_per_cycle,omitempty"`    // Durability loss per cycle (default 1)
+	ProduceEnergy         float64    `json:"produce_energy,omitempty"`          // For generators: energy produced
+	CanConsume            []string   `json:"can_consume,omitempty"`             // For generators: fuel item IDs
+	StorageCapacity       int        `json:"storage_capacity,omitempty"`        // Max items stored
+	SupportedStorageTypes []Unit     `json:"supported_storage_types,omitempty"` // "kg", "l", "u"
+	CanStoreItems         []string   `json:"can_store_items,omitempty"`         // Specific items it can store (optional filter)
 }
 
 // Item represents a static game item definition
@@ -45,6 +57,7 @@ type Item struct {
 	BasePrice    float64  `json:"base_price"`
 	Volatility   float64  `json:"volatility,omitempty"`
 	Icon         string   `json:"icon,omitempty"`
+	Unit         Unit     `json:"unit"`          // kg, l, u
 	Minable      bool     `json:"minable"`       // Can be harvested by CEO
 	IsExplorable bool     `json:"is_explorable"` // Can be found via exploration
 	// Machine-specific fields (deprecated, use Metadata)
@@ -73,39 +86,39 @@ var Items = map[string]Item{
 	// RESSOURCES BRUTES - Matériaux de base
 	// -------------------------------------------------------------------------
 	"wood": {
-		ID: "wood", Name: "Bois", Type: ItemTypeRessourceBrute,
+		ID: "wood", Name: "Bois", Type: ItemTypeRessourceBrute, Unit: UnitKg,
 		BasePrice: 2, Volatility: 0, Minable: true, IsExplorable: false, Icon: "🪵",
 	},
 	"stone": {
-		ID: "stone", Name: "Pierre", Type: ItemTypeRessourceBrute,
+		ID: "stone", Name: "Pierre", Type: ItemTypeRessourceBrute, Unit: UnitKg,
 		BasePrice: 3, Volatility: 0, Minable: true, IsExplorable: false, Icon: "🪨",
 	},
 	"silica": {
-		ID: "silica", Name: "Silice (Sable)", Type: ItemTypeRessourceBrute,
+		ID: "silica", Name: "Silice (Sable)", Type: ItemTypeRessourceBrute, Unit: UnitKg,
 		BasePrice: 6.63, Volatility: 0.10, Minable: true, IsExplorable: false, Icon: "🏜️",
 	},
 	"iron_ore": {
-		ID: "iron_ore", Name: "Minerai de Fer", Type: ItemTypeRessourceBrute,
+		ID: "iron_ore", Name: "Minerai de Fer", Type: ItemTypeRessourceBrute, Unit: UnitKg,
 		BasePrice: 13.45, Volatility: 0.15, Minable: false, IsExplorable: true, Icon: "🔩",
 	},
 	"copper_ore": {
-		ID: "copper_ore", Name: "Minerai de Cuivre", Type: ItemTypeRessourceBrute,
+		ID: "copper_ore", Name: "Minerai de Cuivre", Type: ItemTypeRessourceBrute, Unit: UnitKg,
 		BasePrice: 21.19, Volatility: 0.20, Minable: false, IsExplorable: true, Icon: "🟠",
 	},
 	"coal": {
-		ID: "coal", Name: "Charbon", Type: ItemTypeRessourceBrute,
+		ID: "coal", Name: "Charbon", Type: ItemTypeRessourceBrute, Unit: UnitKg,
 		BasePrice: 8.27, Volatility: 0.25, Minable: false, IsExplorable: true, Icon: "🪨",
 	},
 	"gold_ore": {
-		ID: "gold_ore", Name: "Or Brut", Type: ItemTypeRessourceBrute,
+		ID: "gold_ore", Name: "Or Brut", Type: ItemTypeRessourceBrute, Unit: UnitKg,
 		BasePrice: 72.86, Volatility: 0.40, Minable: false, IsExplorable: true, Icon: "💎",
 	},
 	"crude_oil": {
-		ID: "crude_oil", Name: "Pétrole Brut", Type: ItemTypeRessourceBrute,
+		ID: "crude_oil", Name: "Pétrole Brut", Type: ItemTypeRessourceBrute, Unit: UnitL,
 		BasePrice: 56.82, Volatility: 0.55, Minable: false, IsExplorable: true, Icon: "🛢️",
 	},
 	"lithium": {
-		ID: "lithium", Name: "Lithium", Type: ItemTypeRessourceBrute,
+		ID: "lithium", Name: "Lithium", Type: ItemTypeRessourceBrute, Unit: UnitKg,
 		BasePrice: 16.94, Volatility: 0.60, Minable: false, IsExplorable: false, Icon: "🔋",
 	},
 
@@ -113,47 +126,47 @@ var Items = map[string]Item{
 	// COMPOSANTS - Matériaux transformés
 	// -------------------------------------------------------------------------
 	"wooden_plank": {
-		ID: "wooden_plank", Name: "Planche de bois", Type: ItemTypeComposant,
+		ID: "wooden_plank", Name: "Planche de bois", Type: ItemTypeComposant, Unit: UnitUnit,
 		BasePrice: 15.45, Volatility: 0.10, Icon: "🪵",
 	},
 	"iron_ingot": {
-		ID: "iron_ingot", Name: "Lingot de Fer", Type: ItemTypeComposant,
+		ID: "iron_ingot", Name: "Lingot de Fer", Type: ItemTypeComposant, Unit: UnitUnit,
 		BasePrice: 41.12, Volatility: 0.15, Icon: "🔩",
 	},
 	"copper_ingot": {
-		ID: "copper_ingot", Name: "Lingot de Cuivre", Type: ItemTypeComposant,
+		ID: "copper_ingot", Name: "Lingot de Cuivre", Type: ItemTypeComposant, Unit: UnitUnit,
 		BasePrice: 55.83, Volatility: 0.18, Icon: "🟠",
 	},
 	"steel": {
-		ID: "steel", Name: "Acier", Type: ItemTypeComposant,
+		ID: "steel", Name: "Acier", Type: ItemTypeComposant, Unit: UnitUnit,
 		BasePrice: 98.21, Volatility: 0.12, Icon: "⬛",
 	},
 	"glass": {
-		ID: "glass", Name: "Verre", Type: ItemTypeComposant,
+		ID: "glass", Name: "Verre", Type: ItemTypeComposant, Unit: UnitUnit,
 		BasePrice: 42.42, Volatility: 0.15, Icon: "🪟",
 	},
 	"plastic": {
-		ID: "plastic", Name: "Plastique", Type: ItemTypeComposant,
+		ID: "plastic", Name: "Plastique", Type: ItemTypeComposant, Unit: UnitUnit,
 		BasePrice: 64.99, Volatility: 0.30, Icon: "🧱",
 	},
 	"electric_cable": {
-		ID: "electric_cable", Name: "Câble Électrique", Type: ItemTypeComposant,
+		ID: "electric_cable", Name: "Câble Électrique", Type: ItemTypeComposant, Unit: UnitUnit,
 		BasePrice: 81.14, Volatility: 0.18, Icon: "🔌",
 	},
 	"gear": {
-		ID: "gear", Name: "Engrenage", Type: ItemTypeComposant,
+		ID: "gear", Name: "Engrenage", Type: ItemTypeComposant, Unit: UnitUnit,
 		BasePrice: 61.49, Volatility: 0.10, Icon: "⚙️",
 	},
 	"simple_circuit": {
-		ID: "simple_circuit", Name: "Circuit Simple", Type: ItemTypeComposant,
+		ID: "simple_circuit", Name: "Circuit Simple", Type: ItemTypeComposant, Unit: UnitUnit,
 		BasePrice: 268.83, Volatility: 0.35, Icon: "🔲",
 	},
 	"processor": {
-		ID: "processor", Name: "Processeur", Type: ItemTypeComposant,
+		ID: "processor", Name: "Processeur", Type: ItemTypeComposant, Unit: UnitUnit,
 		BasePrice: 1560.83, Volatility: 0.50, Icon: "💻",
 	},
 	"battery_cell": {
-		ID: "battery_cell", Name: "Cellule de Batterie", Type: ItemTypeComposant,
+		ID: "battery_cell", Name: "Cellule de Batterie", Type: ItemTypeComposant, Unit: UnitUnit,
 		BasePrice: 985.43, Volatility: 0.45, Icon: "🔋",
 	},
 
@@ -161,15 +174,15 @@ var Items = map[string]Item{
 	// PRODUITS FINIS
 	// -------------------------------------------------------------------------
 	"electric_motor": {
-		ID: "electric_motor", Name: "Moteur Électrique", Type: ItemTypeProduitFini,
+		ID: "electric_motor", Name: "Moteur Électrique", Type: ItemTypeProduitFini, Unit: UnitUnit,
 		BasePrice: 2500, Volatility: 0.25, Icon: "⚡",
 	},
 	"smartphone": {
-		ID: "smartphone", Name: "Smartphone", Type: ItemTypeProduitFini,
+		ID: "smartphone", Name: "Smartphone", Type: ItemTypeProduitFini, Unit: UnitUnit,
 		BasePrice: 8500, Volatility: 0.45, Icon: "📱",
 	},
 	"computer": {
-		ID: "computer", Name: "Ordinateur", Type: ItemTypeProduitFini,
+		ID: "computer", Name: "Ordinateur", Type: ItemTypeProduitFini, Unit: UnitUnit,
 		BasePrice: 12000, Volatility: 0.40, Icon: "🖥️",
 	},
 
@@ -177,26 +190,26 @@ var Items = map[string]Item{
 	// MACHINES - Tier 1 (Niveau 1+)
 	// -------------------------------------------------------------------------
 	"forestry_machine": {
-		ID: "forestry_machine", Name: "Exploitation Forestière", Type: ItemTypeMachine,
+		ID: "forestry_machine", Name: "Exploitation Forestière", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 1042, Product: "wood", ProductQuantity: 2, ProductionTime: 120,
 		MaxEmployee: 2, EnergyType: EnergyTypeManuel, Icon: "/icons/forestry_machine.png",
 	},
 	"basic_mining_machine": {
-		ID: "basic_mining_machine", Name: "Extraction Minière de base", Type: ItemTypeMachine,
+		ID: "basic_mining_machine", Name: "Extraction Minière de base", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 2876, Product: "iron_ore", ProductQuantity: 3, ProductionTime: 50,
 		MaxEmployee: 2, EnergyType: EnergyTypeManuel, Icon: "/icons/basic_mining_machine.png",
 	},
 	"sawmill": {
-		ID: "sawmill", Name: "Scierie", Type: ItemTypeMachine,
+		ID: "sawmill", Name: "Scierie", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 1500, UseRecipe: "wooden_plank_recipe", ProductionTime: 20,
 		MaxEmployee: 2, EnergyType: EnergyTypeManuel, Icon: "/icons/sawmill.png",
 	},
 	"solar_panel": {
-		ID: "solar_panel", Name: "Panneau Solaire", Type: ItemTypeMachine,
+		ID: "solar_panel", Name: "Panneau Solaire", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 2500, ProduceEnergy: 10, EnergyType: EnergyTypeSoleil, Icon: "/icons/solar_panel.png",
 	},
 	"charcoal_mine": {
-		ID: "charcoal_mine", Name: "Mine de Charbon", Type: ItemTypeMachine,
+		ID: "charcoal_mine", Name: "Mine de Charbon", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 2500, ProduceEnergy: 10, EnergyType: EnergyTypeSoleil, Icon: "/icons/charcoal_mine.png",
 	},
 
@@ -204,17 +217,17 @@ var Items = map[string]Item{
 	// MACHINES - Tier 2 (Niveau 3+)
 	// -------------------------------------------------------------------------
 	"iron_foundry": {
-		ID: "iron_foundry", Name: "Fonderie Simple", Type: ItemTypeMachine,
+		ID: "iron_foundry", Name: "Fonderie Simple", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 4108, UseRecipe: "iron_ingot_recipe", ProductionTime: 5,
 		MaxEmployee: 2, NeedEnergy: 5, EnergyType: EnergyTypeElectricite, Icon: "/icons/furnace.png",
 	},
 	"copper_foundry": {
-		ID: "copper_foundry", Name: "Fonderie Cuivre", Type: ItemTypeMachine,
+		ID: "copper_foundry", Name: "Fonderie Cuivre", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 4735, UseRecipe: "copper_ingot_recipe", ProductionTime: 5,
 		MaxEmployee: 2, NeedEnergy: 5, EnergyType: EnergyTypeElectricite, Icon: "/icons/furnace.png",
 	},
 	"copper_extractor": {
-		ID: "copper_extractor", Name: "Extraction Minière de Cuivre", Type: ItemTypeMachine,
+		ID: "copper_extractor", Name: "Extraction Minière de Cuivre", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 20527, Product: "copper_ore", ProductQuantity: 3, ProductionTime: 60,
 		MaxEmployee: 3, NeedEnergy: 8, EnergyType: EnergyTypeElectricite, Icon: "/icons/mining_extractor.png",
 	},
@@ -222,6 +235,7 @@ var Items = map[string]Item{
 		ID:              "iron_extractor",
 		Name:            "Extraction Minière de Fer",
 		Type:            ItemTypeMachine,
+		Unit:            UnitUnit,
 		BasePrice:       18234,
 		Product:         "iron_ore",
 		ProductQuantity: 5,
@@ -236,17 +250,17 @@ var Items = map[string]Item{
 	// MACHINES - Tier 3 (Niveau 6+)
 	// -------------------------------------------------------------------------
 	"thermal_plant": {
-		ID: "thermal_plant", Name: "Central Thermique", Type: ItemTypeMachine,
+		ID: "thermal_plant", Name: "Central Thermique", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 17928, ProduceEnergy: 100, CanConsume: []string{"coal"},
 		EnergyType: EnergyTypeFossile, MaxEmployee: 4, Icon: "🔥",
 	},
 	"glass_furnace": {
-		ID: "glass_furnace", Name: "Four à Verre", Type: ItemTypeMachine,
+		ID: "glass_furnace", Name: "Four à Verre", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 8500, UseRecipe: "glass_recipe", ProductionTime: 60,
 		MaxEmployee: 2, NeedEnergy: 15, EnergyType: EnergyTypeElectricite, Icon: "🔥",
 	},
 	"steel_press": {
-		ID: "steel_press", Name: "Presse à Acier", Type: ItemTypeMachine,
+		ID: "steel_press", Name: "Presse à Acier", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 15000, UseRecipe: "steel_recipe", ProductionTime: 120,
 		MaxEmployee: 3, NeedEnergy: 25, EnergyType: EnergyTypeElectricite, Icon: "⚙️",
 	},
@@ -255,17 +269,17 @@ var Items = map[string]Item{
 	// MACHINES - Tier 4 (Niveau 10+)
 	// -------------------------------------------------------------------------
 	"oil_refinery": {
-		ID: "oil_refinery", Name: "Raffinerie", Type: ItemTypeMachine,
+		ID: "oil_refinery", Name: "Raffinerie", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 45000, UseRecipe: "plastic_recipe", ProductionTime: 120,
 		MaxEmployee: 5, NeedEnergy: 50, EnergyType: EnergyTypeElectricite, Icon: "🏭",
 	},
 	"petrol_pumpjack": {
-		ID: "petrol_pumpjack", Name: "Pompe à Pétrole", Type: ItemTypeMachine,
+		ID: "petrol_pumpjack", Name: "Pompe à Pétrole", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 45000, UseRecipe: "crude_oil_recipe", ProductionTime: 120,
 		MaxEmployee: 5, NeedEnergy: 50, EnergyType: EnergyTypeElectricite, Icon: "/icons/petrol_pumpjack.png",
 	},
 	"assembly_line": {
-		ID: "assembly_line", Name: "Ligne d'Assemblage", Type: ItemTypeMachine,
+		ID: "assembly_line", Name: "Ligne d'Assemblage", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 85000, UseRecipe: "electric_motor_recipe", ProductionTime: 360,
 		MaxEmployee: 8, NeedEnergy: 100, EnergyType: EnergyTypeElectricite, Icon: "🏭",
 	},
@@ -274,13 +288,32 @@ var Items = map[string]Item{
 	// MACHINES - Tier 5 (Niveau 15+)
 	// -------------------------------------------------------------------------
 	"hightech_factory": {
-		ID: "hightech_factory", Name: "Usine High-Tech", Type: ItemTypeMachine,
+		ID: "hightech_factory", Name: "Usine High-Tech", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 250000, UseRecipe: "smartphone_recipe", ProductionTime: 600,
 		MaxEmployee: 12, NeedEnergy: 200, EnergyType: EnergyTypeElectricite, Icon: "🏢",
 	},
 	"wind_turbine": {
-		ID: "wind_turbine", Name: "Éolienne (Production de 4 MW)", Type: ItemTypeMachine,
+		ID: "wind_turbine", Name: "Éolienne (Production de 4 MW)", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 250000, ProduceEnergy: 4, EnergyType: EnergyTypeElectricite, Icon: "/icons/wind_turbine.png",
+	},
+	// -------------------------------------------------------------------------
+	// STOCKAGE
+	// -------------------------------------------------------------------------
+	"warehouse_small": {
+		ID: "warehouse_small", Name: "Petit Entrepôt", Type: ItemTypeStockage, Unit: UnitUnit,
+		BasePrice: 5000, Icon: "📦",
+		Metadata: &MachineMetadata{
+			StorageCapacity:       1000,
+			SupportedStorageTypes: []Unit{UnitKg, UnitUnit},
+		},
+	},
+	"fluid_tank_small": {
+		ID: "fluid_tank_small", Name: "Citerne Standard", Type: ItemTypeStockage, Unit: UnitUnit,
+		BasePrice: 7500, Icon: "🛢️",
+		Metadata: &MachineMetadata{
+			StorageCapacity:       1000,
+			SupportedStorageTypes: []Unit{UnitL},
+		},
 	},
 }
 

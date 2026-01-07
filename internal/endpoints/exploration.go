@@ -19,104 +19,86 @@ func registerExplorationEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent
 		}
 
 		data := struct {
-			TargetResourceId string `json:"targetResourceId"`
+			EmployeeId string `json:"employeeId"`
+			ResourceId string `json:"resourceId"`
 		}{}
+		// Support old/new field names just in case, though frontend sends employeeId and resourceId
 		if err := c.BindBody(&data); err != nil {
 			return apis.NewBadRequestError("Invalid JSON", err)
 		}
 
-		companyId := authRecord.GetString("active_company")
-		if companyId == "" {
-			return apis.NewBadRequestError("Aucune entreprise active", nil)
+		if data.EmployeeId == "" {
+			return apis.NewBadRequestError("employeeId requis", nil)
+		}
+		if data.ResourceId == "" {
+			return apis.NewBadRequestError("resourceId requis", nil)
 		}
 
 		return app.RunInTransaction(func(txApp core.App) error {
+			// 1. Fetch Employee
+			employee, err := txApp.FindRecordById("employees", data.EmployeeId)
+			if err != nil {
+				return apis.NewBadRequestError("Employé introuvable", nil)
+			}
+
+			// 2. Check Ownership
+			companyId := employee.GetString("employer")
 			company, err := txApp.FindRecordById("companies", companyId)
 			if err != nil {
 				return apis.NewBadRequestError("Entreprise introuvable", nil)
 			}
 
-			// Validate CEO
-			if company.GetString("ceo") != authRecord.Id {
-				return apis.NewForbiddenError("Seul le PDG peut lancer une exploration", nil)
+			if !authRecord.IsSuperuser() {
+				if company.GetString("ceo") != authRecord.Id {
+					return apis.NewForbiddenError("Cet employé ne vous appartient pas", nil)
+				}
 			}
 
-			// Fetch target resource item
-			item, err := txApp.FindRecordById("items", data.TargetResourceId)
-			if err != nil {
-				return apis.NewBadRequestError("Ressource cible introuvable", nil)
+			// 3. Check Eligibility (Must be Explorateur and Idle)
+			if employee.GetString("poste") != "Explorateur" {
+				return apis.NewBadRequestError("Seul un Explorateur peut partir en mission", nil)
+			}
+			if employee.GetString("deposit") != "" || employee.GetString("exploration") != "" {
+				return apis.NewBadRequestError("Cet employé est déjà occupé", nil)
 			}
 
-			// Verify it is explorable
-			if !item.GetBool("is_explorable") {
-				return apis.NewBadRequestError("Cet item ne peut pas être exploré", nil)
-			}
-
-			// --- Cost Logic ---
-			// Base cost could be dynamic. For now, let's say 5000 credits per mission.
-			cost := 5000
-
-			// Optional: Check if user has specific tech to reduce cost or allow exploration
-			// (Skipped for V1)
-
-			currentBalance := company.GetInt("balance")
-			if currentBalance < cost {
-				return apis.NewBadRequestError(fmt.Sprintf("Fonds insuffisants. Coût: %d, Solde: %d", cost, currentBalance), nil)
-			}
-
-			// Deduct cost
-			company.Set("balance", currentBalance-cost)
-			if err := txApp.Save(company); err != nil {
-				return apis.NewBadRequestError("Erreur lors du paiement", err)
-			}
-
-			// Create Exploration Record
-			explorationsCollection, err := txApp.FindCollectionByNameOrId("explorations")
+			// 4. Create Exploration Record
+			exCollection, err := txApp.FindCollectionByNameOrId("explorations")
 			if err != nil {
 				return err
 			}
 
-			record := core.NewRecord(explorationsCollection)
-			record.Set("company", companyId)
-			record.Set("target_resource", data.TargetResourceId)
-			record.Set("status", "En cours") // Enum: "En cours", "Succès", "Echec"
+			exRecord := core.NewRecord(exCollection)
+			exRecord.Set("company", companyId)
+			exRecord.Set("employee", data.EmployeeId)
+			exRecord.Set("target_resource_id", data.ResourceId)
+			exRecord.Set("status", "En cours")
 
-			// Calculate Duration based on Tech Level
-			// Formula: Level * 5 minutes. Default Level 1.
-			baseDurationPerLevel := 5 * time.Minute
-			level := 1
+			// Set expiration based on level logic (kept from old implementation but simplified)
+			// Or just set to now + fixed time for now
+			duration := 15 * time.Minute // 15 mins
+			exRecord.Set("end_time", time.Now().Add(duration))
 
-			// Find technology that unlocks this item (Inverse relation lookup)
-			// We look for a technology where 'item_unlocked' contains the target item ID
-			tech, err := txApp.FindFirstRecordByFilter(
-				"technologies",
-				fmt.Sprintf("item_unlocked ~ '%s'", data.TargetResourceId),
-			)
-
-			if err == nil && tech != nil {
-				reqLevel := tech.GetInt("required_level")
-				if reqLevel > 1 {
-					level = reqLevel
-				}
+			if err := txApp.Save(exRecord); err != nil {
+				return fmt.Errorf("failed to create exploration: %w", err)
 			}
 
-			duration := time.Duration(level) * baseDurationPerLevel
-			record.Set("end_time", time.Now().Add(duration))
-
-			if err := txApp.Save(record); err != nil {
-				return apis.NewBadRequestError("Impossible de démarrer l'exploration", err)
+			// 5. Update Employee Status
+			employee.Set("exploration", exRecord.Id)
+			if err := txApp.Save(employee); err != nil {
+				return fmt.Errorf("failed to update employee status: %w", err)
 			}
 
 			return c.JSON(200, map[string]interface{}{
-				"success": true,
-				"message": "Exploration lancée !",
-				"cost":    cost,
-				"endTime": record.GetDateTime("end_time"),
+				"success":       true,
+				"message":       "Mission d'exploration lancée",
+				"explorationId": exRecord.Id,
+				"endTime":       exRecord.GetDateTime("end_time"),
 			})
 		})
 	})
 
-	// GET /api/explorations - List active explorations for the company
+	// GET /api/explorations - List recent explorations for the company
 	e.Router.GET("/api/explorations", func(c *core.RequestEvent) error {
 		authRecord := c.Auth
 		if authRecord == nil {
@@ -126,7 +108,7 @@ func registerExplorationEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent
 
 		records, err := app.FindRecordsByFilter(
 			"explorations",
-			fmt.Sprintf("company = '%s' && status = 'En cours'", companyId),
+			fmt.Sprintf("company = '%s'", companyId),
 			"-created",
 			100,
 			0,
@@ -135,11 +117,79 @@ func registerExplorationEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent
 			return apis.NewBadRequestError("Erreur list", err)
 		}
 
-		// Expand resource info
+		// Expand resource info and employee info
 		for _, r := range records {
-			app.ExpandRecord(r, []string{"target_resource"}, nil)
+			app.ExpandRecord(r, []string{"target_resource", "employee"}, nil)
 		}
 
 		return c.JSON(200, records)
+	})
+
+	// POST /api/exploration/acknowledge - Acknowledge a mission result and free the employee
+	e.Router.POST("/api/exploration/acknowledge", func(c *core.RequestEvent) error {
+		authRecord := c.Auth
+		if authRecord == nil {
+			return apis.NewUnauthorizedError("Non connecté", nil)
+		}
+
+		data := struct {
+			ExplorationId string `json:"explorationId"`
+		}{}
+		if err := c.BindBody(&data); err != nil {
+			return apis.NewBadRequestError("Invalid JSON", err)
+		}
+
+		if data.ExplorationId == "" {
+			return apis.NewBadRequestError("explorationId requis", nil)
+		}
+
+		return app.RunInTransaction(func(txApp core.App) error {
+			// 1. Fetch Exploration
+			exploration, err := txApp.FindRecordById("explorations", data.ExplorationId)
+			if err != nil {
+				return apis.NewBadRequestError("Exploration introuvable", nil)
+			}
+
+			// 2. Check Ownership
+			companyId := exploration.GetString("company")
+			company, err := txApp.FindRecordById("companies", companyId)
+			if err != nil {
+				return apis.NewBadRequestError("Entreprise introuvable", nil)
+			}
+			if !authRecord.IsSuperuser() && company.GetString("ceo") != authRecord.Id {
+				return apis.NewForbiddenError("Cette mission ne vous appartient pas", nil)
+			}
+
+			// 3. Check status (must be resolved)
+			status := exploration.GetString("status")
+			if status == "En cours" {
+				return apis.NewBadRequestError("La mission est encore en cours", nil)
+			}
+
+			// 4. Free Employee
+			employeeId := exploration.GetString("employee")
+			if employeeId != "" {
+				employee, err := txApp.FindRecordById("employees", employeeId)
+				if err == nil {
+					employee.Set("exploration", "")
+					if err := txApp.Save(employee); err != nil {
+						app.Logger().Error("Failed to clear employee exploration", "id", employeeId, "error", err)
+					}
+				}
+			}
+
+			// 5. Delete or Resolve the exploration record?
+			// Let's delete it to keep DB clean, or we could add a 'resolved' bool field.
+			// User said "failed exploration are not shown", showing them AFTER failure but BEFORE acknowledge is the goal.
+			// Once acknowledged, they should disappear from the modal.
+			if err := txApp.Delete(exploration); err != nil {
+				return fmt.Errorf("failed to delete exploration: %w", err)
+			}
+
+			return c.JSON(200, map[string]interface{}{
+				"success": true,
+				"message": "Mission acquittée",
+			})
+		})
 	})
 }

@@ -94,4 +94,34 @@ func registerEmployeesEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, 
 			"description":          "Coût moyen estimé pour embaucher un employé",
 		})
 	})
+
+	// GET /api/employees/available - Get employees not assigned to anything (Machine, Deposit, Exploration)
+	e.Router.GET("/api/employees/available", func(c *core.RequestEvent) error {
+		authRecord := c.Auth
+		if authRecord == nil {
+			return apis.NewUnauthorizedError("Non connecté", nil)
+		}
+
+		companyId := authRecord.GetString("active_company")
+		if companyId == "" {
+			return apis.NewBadRequestError("Aucune entreprise active", nil)
+		}
+
+		// 1. Fetch all employees for this company that look free (deposit=empty && exploration=empty)
+		// We still need to check Machine assignments which are on the Machine record
+		employees, err := app.FindRecordsByFilter("employees", fmt.Sprintf("employer = '%s' && deposit = '' && exploration = '' && machine = ''", companyId), "-mining", 500, 0)
+		if err != nil {
+			return apis.NewBadRequestError("Erreur lors de la récupération des employés", err)
+		}
+
+		// Simplified: Since we now filter by machine='', deposit='', exploration='',
+		// the returned employees are already available.
+		availableEmployees := employees
+
+		return c.JSON(200, map[string]interface{}{
+			"items":      availableEmployees,
+			"totalItems": len(availableEmployees),
+		})
+	})
+
 }

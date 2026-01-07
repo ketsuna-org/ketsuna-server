@@ -36,7 +36,7 @@ func registerMachineHooks(app *pocketbase.PocketBase, inv *InventoryLogic, graph
 		record := e.Record
 		companyId := record.GetString("company")
 		machineItemId := record.GetString("machine_id")
-		employeeIds := record.GetStringSlice("employees")
+
 		depositId := record.GetString("deposit")
 
 		if companyId == "" || machineItemId == "" {
@@ -44,28 +44,11 @@ func registerMachineHooks(app *pocketbase.PocketBase, inv *InventoryLogic, graph
 		}
 
 		// 1. Validate employees not assigned elsewhere
-		if len(employeeIds) > 0 {
-			for _, empId := range employeeIds {
-				found, err := app.FindRecordsByFilter("machines", fmt.Sprintf("employees ~ '%s'", empId), "", 1, 0)
-				if err == nil && len(found) > 0 {
-					return apis.NewBadRequestError("Un ou plusieurs employés sont déjà assignés à une autre machine.", nil)
-				}
-				// Check if assigned to deposit
-				emp, err := app.FindRecordById("employees", empId)
-				if err == nil && emp.GetString("deposit") != "" {
-					return apis.NewBadRequestError("Cet employé est déjà assigné à un gisement.", nil)
-				}
-			}
-		}
+		// REMOVED: Employees are now assigned via employee record update, not machine record.
+		// The endpoints/machines.go handles assignment validation.
 
 		// 2. Check max_employee limit using static gamedata
-		machineItem := gamedata.GetItem(machineItemId)
-		if machineItem != nil {
-			maxEmp := machineItem.MaxEmployee
-			if maxEmp > 0 && len(employeeIds) > maxEmp {
-				return apis.NewBadRequestError(fmt.Sprintf("Cette machine ne peut accueillir que %d employé(s) maximum.", maxEmp), nil)
-			}
-		}
+		// REMOVED: Same reason.
 
 		// 3. VALIDATE DEPOSIT CAPACITY (if assigning to deposit)
 		if depositId != "" {
@@ -134,51 +117,10 @@ func registerMachineHooks(app *pocketbase.PocketBase, inv *InventoryLogic, graph
 		return e.Next()
 	})
 
-	app.OnRecordUpdateRequest("machines").BindFunc(func(e *core.RecordRequestEvent) error {
-		record := e.Record
-		machineItemId := record.GetString("machine_id")
-		employeeIds := record.GetStringSlice("employees")
-
-		// Check max_employee limit using static gamedata
-		if machineItemId != "" {
-			machineItem := gamedata.GetItem(machineItemId)
-			if machineItem != nil {
-				maxEmp := machineItem.MaxEmployee
-				if maxEmp > 0 && len(employeeIds) > maxEmp {
-					return apis.NewBadRequestError(fmt.Sprintf("Cette machine ne peut accueillir que %d employé(s) maximum. Vous essayez d'en assigner %d.", maxEmp, len(employeeIds)), nil)
-				}
-			}
-		}
-
-		if len(employeeIds) > 0 {
-			e.App.Logger().Info("[MACHINES] Validating update", "machineId", record.Id, "newEmployeeList", employeeIds)
-			for _, empId := range employeeIds {
-				// Check Machine
-				found, err := app.FindRecordsByFilter("machines", fmt.Sprintf("employees ~ '%s'", empId), "", 10, 0)
-				if err == nil {
-					e.App.Logger().Info("[MACHINES] Checked employee", "empId", empId, "foundInMachines", len(found))
-					for _, m := range found {
-						e.App.Logger().Info("[MACHINES] comparing", "foundId", m.Id, "currentId", record.Id)
-						if m.Id != record.Id {
-							app.Logger().Error("[MACHINES] Validation failed: Employee already busy", "empId", empId, "otherMachine", m.Id)
-							return apis.NewBadRequestError("Un ou plusieurs employés sont déjà assignés à une autre machine.", nil)
-						}
-					}
-				} else {
-					e.App.Logger().Error("[MACHINES] Error checking filter", "error", err)
-				}
-
-				// Check Deposit
-				emp, err := app.FindRecordById("employees", empId)
-				if err == nil && emp.GetString("deposit") != "" {
-					return apis.NewBadRequestError("Cet employé est déjà assigné à un gisement.", nil)
-				}
-			}
-		} else {
-			e.App.Logger().Info("[MACHINES] Clearing all employees", "machineId", record.Id)
-		}
-		return e.Next()
-	})
+	// REMOVED: OnRecordUpdateRequest validation for employees.
+	// Since machines no longer have 'employees' field, this hook serves no purpose for employee validation.
+	// If other updates need validation, add them here.
+	// app.OnRecordUpdateRequest("machines").BindFunc(...)
 
 	app.OnRecordDeleteRequest("machines").BindFunc(func(e *core.RecordRequestEvent) error {
 		record := e.Record
@@ -347,118 +289,6 @@ func AutoAssignDeposits(app core.App, companyId string) (int, error) {
 				assignedCount++
 			}
 		}
-	}
-
-	return assignedCount, nil
-}
-
-// AutoAssignEmployees assigns available employees to machines efficiently
-func AutoAssignEmployees(app core.App, companyId string) (int, error) {
-	// Get all machines for the company
-	machines, err := app.FindRecordsByFilter("machines", fmt.Sprintf("company = '%s'", companyId), "", 0, 0)
-	if err != nil {
-		return 0, fmt.Errorf("erreur récupération machines: %v", err)
-	}
-
-	// Get all employees for the company (sorted by efficiency)
-	employees, err := app.FindRecordsByFilter("employees", fmt.Sprintf("employer = '%s'", companyId), "-efficiency", 0, 0)
-	if err != nil {
-		return 0, fmt.Errorf("erreur récupération employés: %v", err)
-	}
-
-	// Build set of already-busy employee IDs
-	busySet := make(map[string]bool)
-	for _, m := range machines {
-		empIds := m.GetStringSlice("employees")
-		for _, id := range empIds {
-			busySet[id] = true
-		}
-	}
-
-	// Build list of available employees
-	var availableEmpIds []string
-	for _, emp := range employees {
-		if !busySet[emp.Id] {
-			availableEmpIds = append(availableEmpIds, emp.Id)
-		}
-	}
-
-	if len(availableEmpIds) == 0 {
-		return 0, nil
-	}
-
-	// Sort machines: prioritize those with 0 employees
-	type machineSlot struct {
-		machine     *core.Record
-		maxEmp      int
-		currentEmp  int
-		slotsNeeded int
-	}
-	var machinesNeedingEmp []machineSlot
-
-	for _, m := range machines {
-		machineItemId := m.GetString("machine_id")
-		maxEmp := 1
-		if machineItemId != "" {
-			machineItem := gamedata.GetItem(machineItemId)
-			if machineItem != nil {
-				maxEmp = machineItem.MaxEmployee
-				if maxEmp <= 0 {
-					maxEmp = 1
-				}
-			}
-		}
-
-		currentEmp := len(m.GetStringSlice("employees"))
-		slotsNeeded := maxEmp - currentEmp
-
-		if slotsNeeded > 0 {
-			machinesNeedingEmp = append(machinesNeedingEmp, machineSlot{
-				machine:     m,
-				maxEmp:      maxEmp,
-				currentEmp:  currentEmp,
-				slotsNeeded: slotsNeeded,
-			})
-		}
-	}
-
-	// Sort: empty machines first
-	for i := 0; i < len(machinesNeedingEmp)-1; i++ {
-		for j := i + 1; j < len(machinesNeedingEmp); j++ {
-			iEmpty := machinesNeedingEmp[i].currentEmp == 0
-			jEmpty := machinesNeedingEmp[j].currentEmp == 0
-			if jEmpty && !iEmpty {
-				machinesNeedingEmp[i], machinesNeedingEmp[j] = machinesNeedingEmp[j], machinesNeedingEmp[i]
-			}
-		}
-	}
-
-	// Assign employees to machines
-	assignedCount := 0
-	availableIndex := 0
-
-	for _, ms := range machinesNeedingEmp {
-		if availableIndex >= len(availableEmpIds) {
-			break
-		}
-
-		currentEmployees := ms.machine.GetStringSlice("employees")
-		toAssignCount := ms.slotsNeeded
-		if toAssignCount > len(availableEmpIds)-availableIndex {
-			toAssignCount = len(availableEmpIds) - availableIndex
-		}
-
-		newEmps := availableEmpIds[availableIndex : availableIndex+toAssignCount]
-		availableIndex += toAssignCount
-
-		updatedList := append(currentEmployees, newEmps...)
-		ms.machine.Set("employees", updatedList)
-		if err := app.Save(ms.machine); err != nil {
-			// Continue even if one fails
-			continue
-		}
-
-		assignedCount += toAssignCount
 	}
 
 	return assignedCount, nil
