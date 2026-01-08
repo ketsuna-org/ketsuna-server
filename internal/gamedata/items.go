@@ -24,10 +24,7 @@ const (
 type EnergyType string
 
 const (
-	EnergyTypeSoleil      EnergyType = "Soleil"
-	EnergyTypeElectricite EnergyType = "Electricité"
-	EnergyTypeFossile     EnergyType = "Fossile"
-	EnergyTypeManuel      EnergyType = "Manuel"
+	EnergyTypeManuel EnergyType = "Manuel"
 )
 
 // MachineMetadata contains machine-specific configuration
@@ -91,35 +88,35 @@ var Items = map[string]Item{
 	},
 	"stone": {
 		ID: "stone", Name: "Pierre", Type: ItemTypeRessourceBrute, Unit: UnitKg,
-		BasePrice: 3, Volatility: 0, Minable: true, IsExplorable: false, Icon: "🪨",
+		BasePrice: 2.5, Volatility: 0, Minable: true, IsExplorable: false, Icon: "🪨",
 	},
 	"silica": {
 		ID: "silica", Name: "Silice (Sable)", Type: ItemTypeRessourceBrute, Unit: UnitKg,
-		BasePrice: 6.63, Volatility: 0.10, Minable: true, IsExplorable: false, Icon: "🏜️",
+		BasePrice: 0.5, Volatility: 0.10, Minable: true, IsExplorable: false, Icon: "🏜️",
 	},
 	"iron_ore": {
 		ID: "iron_ore", Name: "Minerai de Fer", Type: ItemTypeRessourceBrute, Unit: UnitKg,
-		BasePrice: 13.45, Volatility: 0.15, Minable: false, IsExplorable: true, Icon: "🔩",
+		BasePrice: 15, Volatility: 0.15, Minable: false, IsExplorable: true, Icon: "🔩",
 	},
 	"copper_ore": {
 		ID: "copper_ore", Name: "Minerai de Cuivre", Type: ItemTypeRessourceBrute, Unit: UnitKg,
-		BasePrice: 21.19, Volatility: 0.20, Minable: false, IsExplorable: true, Icon: "🟠",
+		BasePrice: 15, Volatility: 0.20, Minable: false, IsExplorable: true, Icon: "🟠",
 	},
 	"coal": {
 		ID: "coal", Name: "Charbon", Type: ItemTypeRessourceBrute, Unit: UnitKg,
-		BasePrice: 8.27, Volatility: 0.25, Minable: false, IsExplorable: true, Icon: "🪨",
+		BasePrice: 8, Volatility: 0.25, Minable: false, IsExplorable: true, Icon: "🪨",
 	},
 	"gold_ore": {
 		ID: "gold_ore", Name: "Or Brut", Type: ItemTypeRessourceBrute, Unit: UnitKg,
-		BasePrice: 72.86, Volatility: 0.40, Minable: false, IsExplorable: true, Icon: "💎",
+		BasePrice: 100, Volatility: 0.40, Minable: false, IsExplorable: true, Icon: "💎",
 	},
 	"crude_oil": {
 		ID: "crude_oil", Name: "Pétrole Brut", Type: ItemTypeRessourceBrute, Unit: UnitL,
-		BasePrice: 56.82, Volatility: 0.55, Minable: false, IsExplorable: true, Icon: "🛢️",
+		BasePrice: 60, Volatility: 0.55, Minable: false, IsExplorable: true, Icon: "🛢️",
 	},
 	"lithium": {
 		ID: "lithium", Name: "Lithium", Type: ItemTypeRessourceBrute, Unit: UnitKg,
-		BasePrice: 16.94, Volatility: 0.60, Minable: false, IsExplorable: false, Icon: "🔋",
+		BasePrice:  20, Volatility: 0.60, Minable: false, IsExplorable: false, Icon: "🔋",
 	},
 
 	// -------------------------------------------------------------------------
@@ -127,47 +124,47 @@ var Items = map[string]Item{
 	// -------------------------------------------------------------------------
 	"wooden_plank": {
 		ID: "wooden_plank", Name: "Planche de bois", Type: ItemTypeComposant, Unit: UnitUnit,
-		BasePrice: 15.45, Volatility: 0.10, Icon: "🪵",
+		BasePrice: 2.5, Volatility: 0.10, Icon: "🪵",
 	},
 	"iron_ingot": {
 		ID: "iron_ingot", Name: "Lingot de Fer", Type: ItemTypeComposant, Unit: UnitUnit,
-		BasePrice: 41.12, Volatility: 0.15, Icon: "🔩",
+		BasePrice: 30, Volatility: 0.15, Icon: "🔩",
 	},
 	"copper_ingot": {
 		ID: "copper_ingot", Name: "Lingot de Cuivre", Type: ItemTypeComposant, Unit: UnitUnit,
-		BasePrice: 55.83, Volatility: 0.18, Icon: "🟠",
+		BasePrice: 30, Volatility: 0.18, Icon: "🟠",
 	},
 	"steel": {
 		ID: "steel", Name: "Acier", Type: ItemTypeComposant, Unit: UnitUnit,
-		BasePrice: 98.21, Volatility: 0.12, Icon: "⬛",
+		BasePrice: 60, Volatility: 0.12, Icon: "⬛",
 	},
 	"glass": {
 		ID: "glass", Name: "Verre", Type: ItemTypeComposant, Unit: UnitUnit,
-		BasePrice: 42.42, Volatility: 0.15, Icon: "🪟",
+		BasePrice: 10, Volatility: 0.15, Icon: "🪟",
 	},
 	"plastic": {
 		ID: "plastic", Name: "Plastique", Type: ItemTypeComposant, Unit: UnitUnit,
-		BasePrice: 64.99, Volatility: 0.30, Icon: "🧱",
+		BasePrice: 80, Volatility: 0.30, Icon: "🧱",
 	},
 	"electric_cable": {
 		ID: "electric_cable", Name: "Câble Électrique", Type: ItemTypeComposant, Unit: UnitUnit,
-		BasePrice: 81.14, Volatility: 0.18, Icon: "🔌",
+		BasePrice: 50, Volatility: 0.18, Icon: "🔌",
 	},
 	"gear": {
 		ID: "gear", Name: "Engrenage", Type: ItemTypeComposant, Unit: UnitUnit,
-		BasePrice: 61.49, Volatility: 0.10, Icon: "⚙️",
+		BasePrice: 50, Volatility: 0.10, Icon: "⚙️",
 	},
 	"simple_circuit": {
 		ID: "simple_circuit", Name: "Circuit Simple", Type: ItemTypeComposant, Unit: UnitUnit,
-		BasePrice: 268.83, Volatility: 0.35, Icon: "🔲",
+		BasePrice: 20, Volatility: 0.35, Icon: "🔲",
 	},
 	"processor": {
 		ID: "processor", Name: "Processeur", Type: ItemTypeComposant, Unit: UnitUnit,
-		BasePrice: 1560.83, Volatility: 0.50, Icon: "💻",
+		BasePrice: 1500, Volatility: 0.50, Icon: "💻",
 	},
 	"battery_cell": {
 		ID: "battery_cell", Name: "Cellule de Batterie", Type: ItemTypeComposant, Unit: UnitUnit,
-		BasePrice: 985.43, Volatility: 0.45, Icon: "🔋",
+		BasePrice: 500, Volatility: 0.45, Icon: "🔋",
 	},
 
 	// -------------------------------------------------------------------------
@@ -191,12 +188,12 @@ var Items = map[string]Item{
 	// -------------------------------------------------------------------------
 	"forestry_machine": {
 		ID: "forestry_machine", Name: "Exploitation Forestière", Type: ItemTypeMachine, Unit: UnitUnit,
-		BasePrice: 1042, Product: "wood", ProductQuantity: 15, ProductionTime: 20,
+		BasePrice: 1000, Product: "wood", ProductQuantity: 15, ProductionTime: 20,
 		MaxEmployee: 2, EnergyType: EnergyTypeManuel, Icon: "/icons/forestry_machine.png",
 	},
 	"basic_mining_machine": {
 		ID: "basic_mining_machine", Name: "Extraction Minière de base", Type: ItemTypeMachine, Unit: UnitUnit,
-		BasePrice: 2876, Product: "iron_ore", ProductQuantity: 15, ProductionTime: 50,
+		BasePrice: 2500, Product: "iron_ore", ProductQuantity: 15, ProductionTime: 50,
 		MaxEmployee: 2, EnergyType: EnergyTypeManuel, Icon: "/icons/basic_mining_machine.png",
 	},
 	"sawmill": {
@@ -206,11 +203,11 @@ var Items = map[string]Item{
 	},
 	"solar_panel": {
 		ID: "solar_panel", Name: "Panneau Solaire", Type: ItemTypeMachine, Unit: UnitUnit,
-		BasePrice: 2500, ProduceEnergy: 10, EnergyType: EnergyTypeSoleil, Icon: "/icons/solar_panel.png",
+		BasePrice: 2500, EnergyType: EnergyTypeManuel, Icon: "/icons/solar_panel.png",
 	},
 	"charcoal_mine": {
 		ID: "charcoal_mine", Name: "Mine de Charbon", Type: ItemTypeMachine, Unit: UnitUnit,
-		BasePrice: 2500, ProduceEnergy: 10, EnergyType: EnergyTypeSoleil, Icon: "/icons/charcoal_mine.png",
+		BasePrice: 2500, EnergyType: EnergyTypeManuel, Icon: "/icons/charcoal_mine.png",
 	},
 
 	// -------------------------------------------------------------------------
@@ -218,31 +215,30 @@ var Items = map[string]Item{
 	// -------------------------------------------------------------------------
 	"iron_foundry": {
 		ID: "iron_foundry", Name: "Fonderie Simple", Type: ItemTypeMachine, Unit: UnitUnit,
-		BasePrice: 4108, UseRecipe: "iron_ingot_recipe", ProductionTime: 5,
-		MaxEmployee: 2, NeedEnergy: 5, EnergyType: EnergyTypeElectricite, Icon: "/icons/furnace.png",
+		BasePrice: 5000, UseRecipe: "iron_ingot_recipe", ProductionTime: 5,
+		MaxEmployee: 2, EnergyType: EnergyTypeManuel, Icon: "/icons/furnace.png",
 	},
 	"copper_foundry": {
 		ID: "copper_foundry", Name: "Fonderie Cuivre", Type: ItemTypeMachine, Unit: UnitUnit,
-		BasePrice: 4735, UseRecipe: "copper_ingot_recipe", ProductionTime: 5,
-		MaxEmployee: 2, NeedEnergy: 5, EnergyType: EnergyTypeElectricite, Icon: "/icons/furnace.png",
+		BasePrice: 5000, UseRecipe: "copper_ingot_recipe", ProductionTime: 5,
+		MaxEmployee: 2, EnergyType: EnergyTypeManuel, Icon: "/icons/furnace.png",
 	},
 	"copper_extractor": {
 		ID: "copper_extractor", Name: "Extraction Minière de Cuivre", Type: ItemTypeMachine, Unit: UnitUnit,
-		BasePrice: 20527, Product: "copper_ore", ProductQuantity: 3, ProductionTime: 60,
-		MaxEmployee: 3, NeedEnergy: 8, EnergyType: EnergyTypeElectricite, Icon: "/icons/mining_extractor.png",
+		BasePrice: 20000, Product: "copper_ore", ProductQuantity: 3, ProductionTime: 60,
+		MaxEmployee: 3, EnergyType: EnergyTypeManuel, Icon: "/icons/mining_extractor.png",
 	},
 	"iron_extractor": {
 		ID:              "iron_extractor",
 		Name:            "Extraction Minière de Fer",
 		Type:            ItemTypeMachine,
 		Unit:            UnitUnit,
-		BasePrice:       18234,
+		BasePrice:       20000,
 		Product:         "iron_ore",
 		ProductQuantity: 5,
 		ProductionTime:  50,
 		MaxEmployee:     3,
-		NeedEnergy:      8,
-		EnergyType:      EnergyTypeElectricite,
+		EnergyType:      EnergyTypeManuel,
 		Icon:            "/icons/mining_extractor.png",
 	},
 
@@ -251,18 +247,17 @@ var Items = map[string]Item{
 	// -------------------------------------------------------------------------
 	"thermal_plant": {
 		ID: "thermal_plant", Name: "Central Thermique", Type: ItemTypeMachine, Unit: UnitUnit,
-		BasePrice: 17928, ProduceEnergy: 100, CanConsume: []string{"coal"},
-		EnergyType: EnergyTypeFossile, MaxEmployee: 4, Icon: "🔥",
+		BasePrice: 20000, EnergyType: EnergyTypeManuel, MaxEmployee: 4, Icon: "🔥",
 	},
 	"glass_furnace": {
 		ID: "glass_furnace", Name: "Four à Verre", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 8500, UseRecipe: "glass_recipe", ProductionTime: 60,
-		MaxEmployee: 2, NeedEnergy: 15, EnergyType: EnergyTypeElectricite, Icon: "🔥",
+		MaxEmployee: 2, EnergyType: EnergyTypeManuel, Icon: "🔥",
 	},
 	"steel_press": {
 		ID: "steel_press", Name: "Presse à Acier", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 15000, UseRecipe: "steel_recipe", ProductionTime: 120,
-		MaxEmployee: 3, NeedEnergy: 25, EnergyType: EnergyTypeElectricite, Icon: "⚙️",
+		MaxEmployee: 3, EnergyType: EnergyTypeManuel, Icon: "⚙️",
 	},
 
 	// -------------------------------------------------------------------------
@@ -271,17 +266,17 @@ var Items = map[string]Item{
 	"oil_refinery": {
 		ID: "oil_refinery", Name: "Raffinerie", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 45000, UseRecipe: "plastic_recipe", ProductionTime: 120,
-		MaxEmployee: 5, NeedEnergy: 50, EnergyType: EnergyTypeElectricite, Icon: "🏭",
+		MaxEmployee: 5, EnergyType: EnergyTypeManuel, Icon: "🏭",
 	},
 	"petrol_pumpjack": {
 		ID: "petrol_pumpjack", Name: "Pompe à Pétrole", Type: ItemTypeMachine, Unit: UnitUnit,
-		BasePrice: 45000, UseRecipe: "crude_oil_recipe", ProductionTime: 120,
-		MaxEmployee: 5, NeedEnergy: 50, EnergyType: EnergyTypeElectricite, Icon: "/icons/petrol_pumpjack.png",
+		BasePrice: 45000, Product: "crude_oil", ProductQuantity: 25, ProductionTime: 20,
+		MaxEmployee: 1, EnergyType: EnergyTypeManuel, Icon: "/icons/petrol_pumpjack.png",
 	},
 	"assembly_line": {
 		ID: "assembly_line", Name: "Ligne d'Assemblage", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 85000, UseRecipe: "electric_motor_recipe", ProductionTime: 360,
-		MaxEmployee: 8, NeedEnergy: 100, EnergyType: EnergyTypeElectricite, Icon: "🏭",
+		MaxEmployee: 8, EnergyType: EnergyTypeManuel, Icon: "🏭",
 	},
 
 	// -------------------------------------------------------------------------
@@ -290,11 +285,11 @@ var Items = map[string]Item{
 	"hightech_factory": {
 		ID: "hightech_factory", Name: "Usine High-Tech", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 250000, UseRecipe: "smartphone_recipe", ProductionTime: 600,
-		MaxEmployee: 12, NeedEnergy: 200, EnergyType: EnergyTypeElectricite, Icon: "🏢",
+		MaxEmployee: 12, NeedEnergy: 200, EnergyType: EnergyTypeManuel, Icon: "🏢",
 	},
 	"wind_turbine": {
 		ID: "wind_turbine", Name: "Éolienne (Production de 4 MW)", Type: ItemTypeMachine, Unit: UnitUnit,
-		BasePrice: 250000, ProduceEnergy: 4, EnergyType: EnergyTypeElectricite, Icon: "/icons/wind_turbine.png",
+		BasePrice: 250000, ProduceEnergy: 4, EnergyType: EnergyTypeManuel, Icon: "/icons/wind_turbine.png",
 	},
 	// -------------------------------------------------------------------------
 	// STOCKAGE

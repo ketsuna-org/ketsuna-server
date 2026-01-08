@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 
+	"ketsuna.com/server/internal/gamedata"
 	"ketsuna.com/server/internal/hooks"
 
 	"github.com/pocketbase/pocketbase"
@@ -155,13 +156,10 @@ func registerCompanyEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, ec
 				return apis.NewForbiddenError("Vous n'êtes pas le PDG", nil)
 			}
 
-			tech, err := txApp.FindRecordById("technologies", data.TechId)
-			if err != nil {
-				return apis.NewBadRequestError("Technologie introuvable", nil)
-			}
+			tech := gamedata.GetTechnology(data.TechId)
 
 			// Check Requirements
-			reqLevel := tech.GetInt("required_level")
+			reqLevel := tech.RequiredLevel
 			currLevel := company.GetInt("level")
 			if currLevel < reqLevel {
 				return apis.NewBadRequestError(fmt.Sprintf("Niveau insuffisant. Niveau %d requis (vous êtes niveau %d)", reqLevel, currLevel), nil)
@@ -175,7 +173,7 @@ func registerCompanyEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, ec
 			}
 
 			// Check Balance
-			cost := tech.GetFloat("cost")
+			cost := tech.Cost
 			balance := company.GetFloat("balance")
 			if balance < cost {
 				return apis.NewBadRequestError(fmt.Sprintf("Fonds insuffisants. Requis: %.2f, Actuel: %.2f", cost, balance), nil)
@@ -202,7 +200,7 @@ func registerCompanyEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, ec
 
 			return c.JSON(200, map[string]interface{}{
 				"success": true,
-				"message": fmt.Sprintf("Technologie %s débloquée !", tech.GetString("name")),
+				"message": fmt.Sprintf("Technologie %s débloquée !", tech.Name),
 				"cost":    cost,
 			})
 		})
