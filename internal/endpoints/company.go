@@ -186,7 +186,7 @@ func registerCompanyEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, ec
 			}
 			newTech := core.NewRecord(collection)
 			newTech.Set("company", data.CompanyId)
-			newTech.Set("technology", data.TechId)
+			newTech.Set("technology_id", data.TechId)
 
 			if err := txApp.Save(newTech); err != nil {
 				return apis.NewBadRequestError(fmt.Sprintf("Erreur lors du déblocage: %v", err), err)
