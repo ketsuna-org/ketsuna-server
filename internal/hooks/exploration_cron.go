@@ -51,7 +51,7 @@ func processExplorationResult(app *pocketbase.PocketBase, exploration *core.Reco
 	if isSuccess {
 		// Create Deposit
 		companyId := exploration.GetString("company")
-		resourceId := exploration.GetString("target_resource")
+		resourceId := exploration.GetString("target_resource_id")
 
 		// Randomize Quantity (e.g. 50k to 500k)
 		baseQty := 50000.0
