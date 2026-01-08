@@ -707,13 +707,7 @@ func (gt *GraphTraversal) CalculateEnergyBalance(companyId string, optMachines [
 			}
 
 			if canProduce {
-				if itemDef.EnergyType == gamedata.EnergyTypeSoleil {
-					if IsSolarProductionActive() {
-						balance.Available += itemDef.ProduceEnergy
-					}
-				} else {
-					balance.Available += itemDef.ProduceEnergy
-				}
+				balance.Available += itemDef.ProduceEnergy
 			}
 		}
 
