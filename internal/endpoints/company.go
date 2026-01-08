@@ -166,7 +166,7 @@ func registerCompanyEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, ec
 			}
 
 			// Check duplicates
-			filter := fmt.Sprintf("company = '%s' && technology = '%s'", data.CompanyId, data.TechId)
+			filter := fmt.Sprintf("company = '%s' && technology_id = '%s'", data.CompanyId, data.TechId)
 			existing, _ := txApp.FindFirstRecordByFilter("company_techs", filter)
 			if existing != nil {
 				return apis.NewBadRequestError("Cette technologie est déjà acquise", nil)

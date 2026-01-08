@@ -115,7 +115,7 @@ func registerInventoryEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, 
 				// Check if company has this technology
 				_, err := txApp.FindFirstRecordByFilter(
 					"company_techs",
-					fmt.Sprintf("company='%s' && technology='%s'", companyId, requiredTechId),
+					fmt.Sprintf("company='%s' && technology_id='%s'", companyId, requiredTechId),
 				)
 				if err != nil {
 					return apis.NewBadRequestError("Technologie requise non débloquée ! Vous ne pouvez pas acheter cet item.", nil)
