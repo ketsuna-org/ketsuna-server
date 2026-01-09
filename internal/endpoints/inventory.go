@@ -359,6 +359,10 @@ func registerInventoryEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, 
 			return apis.NewBadRequestError("Graph economy non initialisé", nil)
 		}
 
+		// Trigger Technology Status Update (Lazy Update)
+		if err := hooks.UpdateCompanyTechStatus(app, companyId); err != nil {
+			app.Logger().Error("[TECH] Failed to update tech status", "err", err)
+		}
 		producedItems, err := graph.CalculateCompanyInventory(companyId)
 		if err != nil {
 			app.Logger().Error("[REFRESH] Graph calculation failed", "err", err)

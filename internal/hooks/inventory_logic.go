@@ -146,6 +146,11 @@ func (l *InventoryLogic) HasEnoughItems(app core.App, companyId, itemId string, 
 // HasRequiredTechnology checks if a company has the required tech for a recipe
 // Returns (hasIt bool, techName string) - techName is empty if no tech required
 func (l *InventoryLogic) HasRequiredTechnology(app core.App, companyId, recipeId string) (bool, string) {
+	// Trigger lazy tech update first
+	if err := UpdateCompanyTechStatus(app, companyId); err != nil {
+		l.app.Logger().Error("[TECH] Lazy status update failed", "company", companyId, "err", err)
+	}
+
 	// Use static gamedata for recipe lookup
 	recipe := gamedata.GetRecipe(recipeId)
 	if recipe == nil {
@@ -157,8 +162,8 @@ func (l *InventoryLogic) HasRequiredTechnology(app core.App, companyId, recipeId
 		return true, "" // No tech required
 	}
 
-	// Use technology_id text field instead of technology relation
-	filter := fmt.Sprintf("company = '%s' && technology_id = '%s'", companyId, requiredTechId)
+	// Use technology_id text field and check for COMPLETED status strictly
+	filter := fmt.Sprintf("company = '%s' && technology_id = '%s' && status = 'completed'", companyId, requiredTechId)
 	_, err := app.FindFirstRecordByFilter("company_techs", filter)
 	if err != nil {
 		// Use static gamedata for tech name
@@ -227,7 +232,12 @@ func (l *InventoryLogic) ConsumeInputs(app core.App, companyId, recipeId string,
 	// 1. Check Technology using technology_id
 	requiredTechId := recipe.RequiredTech
 	if requiredTechId != "" {
-		filter := fmt.Sprintf("company = '%s' && technology_id = '%s'", companyId, requiredTechId)
+		// Trigger lazy tech update first
+		if err := UpdateCompanyTechStatus(app, companyId); err != nil {
+			l.app.Logger().Error("[TECH] Lazy status update failed in ConsumeInputs", "company", companyId, "err", err)
+		}
+
+		filter := fmt.Sprintf("company = '%s' && technology_id = '%s' && status = 'completed'", companyId, requiredTechId)
 		_, err := app.FindFirstRecordByFilter("company_techs", filter)
 		if err != nil {
 			techName := gamedata.GetTechnologyName(requiredTechId)
