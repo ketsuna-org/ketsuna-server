@@ -20,6 +20,57 @@ func NewInventoryLogic(app *pocketbase.PocketBase) *InventoryLogic {
 
 // UpdateInventory adds or removes quantity from an inventory item
 func (l *InventoryLogic) UpdateInventory(app core.App, companyId, itemId string, quantity int) error {
+	// Check if item is a Machine
+	item := gamedata.GetItem(itemId)
+	if item != nil && item.Type == "Machine" {
+		if quantity > 0 {
+			// Create new machine records
+			collection, err := app.FindCollectionByNameOrId("machines")
+			if err != nil {
+				return err
+			}
+
+			for i := 0; i < quantity; i++ {
+				record := core.NewRecord(collection)
+				record.Set("company", companyId)
+				record.Set("machine_id", itemId)
+				record.Set("placed", false)
+				record.Set("name", item.Name)
+				// Initialize other fields if necessary (durability, etc.)
+
+				if err := app.Save(record); err != nil {
+					return err
+				}
+			}
+			return nil
+		} else if quantity < 0 {
+			// Remove machines (Consumed)
+			// This logic is also partially in ConsumeItem, but good to have here for completeness
+			reqQty := int(math.Abs(float64(quantity)))
+			records, err := app.FindRecordsByFilter("machines",
+				fmt.Sprintf("company = '%s' && machine_id = '%s' && placed = false", companyId, itemId),
+				"-created",
+				reqQty,
+				0,
+			)
+			if err != nil {
+				return err
+			}
+			if len(records) < reqQty {
+				return fmt.Errorf("pas assez de machines '%s' pour en retirer %d", item.Name, reqQty)
+			}
+
+			for _, r := range records {
+				if err := app.Delete(r); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+		return nil // Quantity 0, do nothing
+	}
+
+	// Standard Inventory Logic
 	// 1. Try to find existing inventory
 	// Use item_id text field instead of item relation
 	filter := fmt.Sprintf("company = '%s' && item_id = '%s'", companyId, itemId)
