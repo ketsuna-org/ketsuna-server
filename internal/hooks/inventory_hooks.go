@@ -2,11 +2,11 @@ package hooks
 
 import (
 	"fmt"
-	"math"
 
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
+	"ketsuna.com/server/internal/gamedata"
 )
 
 func registerInventoryHooks(app *pocketbase.PocketBase) {
@@ -35,9 +35,15 @@ func registerInventoryHooks(app *pocketbase.PocketBase) {
 		if err != nil {
 			return apis.NewBadRequestError("Company introuvable", nil)
 		}
-		item, err := e.App.FindRecordById("items", itemId)
-		if err != nil {
+
+		// Use static Gamedata
+		item := gamedata.GetItem(itemId)
+		if item == nil {
 			return apis.NewBadRequestError("Item introuvable", nil)
+		}
+
+		if !item.MarketAvailable {
+			return apis.NewBadRequestError("Cet item n'est pas disponible sur le marché", nil)
 		}
 
 		// If inventory exists, return error
@@ -48,42 +54,18 @@ func registerInventoryHooks(app *pocketbase.PocketBase) {
 
 		// Deduct money for new item if CEO
 		if e.Auth != nil && e.Auth.Id == company.GetString("ceo") {
-			itemPrice := item.GetFloat("base_price") // Changed to float
+			itemPrice := item.BasePrice
 			totalCost := itemPrice * float64(qty)
-			current := company.GetFloat("balance") // Changed to float to match schema (number)
-			// Note: Schema says balance is 'number', so using GetFloat.
+			current := company.GetFloat("balance")
 
 			if current < totalCost {
 				return apis.NewBadRequestError(fmt.Sprintf("Fonds insuffisants. Coût: %.2f€, Solde: %.2f€", totalCost, current), nil)
 			}
 
-			// --- MARKET STOCK CHECK ---
-			// --- MARKET STOCK CHECK ---
-			// market_demand used as Market Stock
-			stock := item.GetInt("market_demand")
-			isMinable := item.GetBool("minable")
-
-			// Only apply stock limits to Non-Minable items (Machines)
-			if !isMinable {
-				if stock < qty {
-					return apis.NewBadRequestError(fmt.Sprintf("Stock insuffisant sur le marché. Disponible: %d", stock), nil)
-				}
-				// Update Market Stock
-				item.Set("market_demand", stock-qty)
-			}
-
-			// Update Price (Buy -> Price Goes UP) - ONLY FOR MACHINES
-			if item.GetString("type") == "Machine" {
-				// "I buy 5 machines, Price goes up !!"
-				// Factor: 0.5% per unit?
-				priceFactor := 0.005
-				newPrice := itemPrice * (1 + float64(qty)*priceFactor)
-				item.Set("base_price", math.Round(newPrice*100)/100)
-			}
-
-			if err := e.App.Save(item); err != nil {
-				return apis.NewBadRequestError("Erreur mise à jour marché", err)
-			}
+			// --- NO MARKET STOCK LOGIC FOR STATIC ITEMS ---
+			// Since items are static code, we cannot track global market stock in them.
+			// Ideally this should be moved to a separate 'market_state' collection if dynamic stock is needed.
+			// For now, we assume infinite stock but respect MarketAvailable.
 
 			// Update Company Balance
 			company.Set("balance", current-totalCost)
@@ -128,37 +110,25 @@ func registerInventoryHooks(app *pocketbase.PocketBase) {
 		newQ := rec.GetInt("quantity")
 		if newQ > oldQ {
 			added := newQ - oldQ
-			item, _ := e.App.FindRecordById("items", rec.GetString("item"))
-			price := item.GetFloat("base_price") // Use float
+			// Use static Gamedata
+			item := gamedata.GetItem(rec.GetString("item"))
+			if item == nil {
+				return apis.NewBadRequestError("Item introuvable", nil) // Should not happen for existing inv
+			}
+
+			if !item.MarketAvailable {
+				return apis.NewBadRequestError("Cet item n'est pas disponible sur le marché", nil)
+			}
+
+			price := item.BasePrice
 			totalCost := price * float64(added)
-			bal := company.GetFloat("balance") // Use float
+			bal := company.GetFloat("balance")
 
 			if bal < totalCost {
 				return apis.NewBadRequestError(fmt.Sprintf("Fonds insuffisants pour acheter %d items. Coût: %.2f€, Solde: %.2f€", added, totalCost, bal), nil)
 			}
 
-			// --- MARKET STOCK CHECK ---
-			stock := item.GetInt("market_demand")
-			isMinable := item.GetBool("minable")
-
-			if !isMinable {
-				if stock < added {
-					return apis.NewBadRequestError(fmt.Sprintf("Stock insuffisant sur le marché. Disponible: %d", stock), nil)
-				}
-				// Update Market Stock
-				item.Set("market_demand", stock-added)
-			}
-
-			// Update Price (Buy -> Price Goes UP) - ONLY FOR MACHINES
-			if item.GetString("type") == "Machine" {
-				priceFactor := 0.005
-				newPrice := price * (1 + float64(added)*priceFactor)
-				item.Set("base_price", math.Round(newPrice*100)/100)
-			}
-
-			if err := e.App.Save(item); err != nil {
-				return apis.NewBadRequestError("Erreur mise à jour marché", err)
-			}
+			// --- NO MARKET STOCK LOGIC FOR STATIC ITEMS ---
 
 			company.Set("balance", bal-totalCost)
 			if err := e.App.Save(company); err != nil {

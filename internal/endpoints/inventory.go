@@ -109,6 +109,10 @@ func registerInventoryEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, 
 				return apis.NewBadRequestError("Item introuvable", nil) // Logic Fix
 			}
 
+			if !item.MarketAvailable {
+				return apis.NewBadRequestError("Cet item n'est pas disponible sur le marché", nil)
+			}
+
 			// 2. Check Tech Requirements
 			isLocked, requiredTechId := gamedata.IsItemUnlockedByTech(item.ID)
 			if isLocked {
@@ -255,6 +259,11 @@ func registerInventoryEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, 
 		searchLower := strings.ToLower(data.Search)
 
 		for _, item := range allItems {
+			// Filter MarketAvailable
+			if !item.MarketAvailable {
+				continue
+			}
+
 			// Filter Type: Only Machine & Stockage
 			if item.Type != gamedata.ItemTypeMachine && item.Type != gamedata.ItemTypeStockage {
 				continue
