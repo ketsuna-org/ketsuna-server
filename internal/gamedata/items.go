@@ -191,16 +191,19 @@ var Items = map[string]Item{
 		ID: "forestry_machine", Name: "Exploitation Forestière", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 1000, Product: "wood", ProductQuantity: 15, ProductionTime: 120,
 		MaxEmployee: 2, EnergyType: EnergyTypeManuel, Icon: "/icons/forestry_machine.png",
+		MarketAvailable: true,
 	},
 	"basic_mining_machine": {
 		ID: "basic_mining_machine", Name: "Extraction Minière de base", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 2500, Product: "iron_ore", ProductQuantity: 15, ProductionTime: 120,
 		MaxEmployee: 2, EnergyType: EnergyTypeManuel, Icon: "/icons/basic_mining_machine.png",
+		MarketAvailable: true,
 	},
 	"sawmill": {
 		ID: "sawmill", Name: "Scierie", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 1500, UseRecipe: "wooden_plank_recipe", ProductionTime: 20,
 		MaxEmployee: 2, EnergyType: EnergyTypeManuel, Icon: "/icons/sawmill.png",
+		MarketAvailable: true,
 	},
 	"solar_panel": {
 		ID: "solar_panel", Name: "Panneau Solaire", Type: ItemTypeMachine, Unit: UnitUnit,
@@ -211,6 +214,7 @@ var Items = map[string]Item{
 		ProductionTime: 120, Product: "coal", ProductQuantity: 10,
 		MaxEmployee: 2,
 		BasePrice:   2500, EnergyType: EnergyTypeManuel, Icon: "/icons/charcoal_mine.png",
+		MarketAvailable: true,
 	},
 
 	// -------------------------------------------------------------------------
@@ -220,16 +224,19 @@ var Items = map[string]Item{
 		ID: "iron_foundry", Name: "Fonderie Simple", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 5000, UseRecipe: "iron_ingot_recipe", ProductionTime: 40,
 		MaxEmployee: 2, EnergyType: EnergyTypeManuel, Icon: "/icons/furnace.png",
+		MarketAvailable: true,
 	},
 	"copper_foundry": {
 		ID: "copper_foundry", Name: "Fonderie Cuivre", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 5000, UseRecipe: "copper_ingot_recipe", ProductionTime: 40,
 		MaxEmployee: 2, EnergyType: EnergyTypeManuel, Icon: "/icons/furnace.png",
+		MarketAvailable: true,
 	},
 	"copper_extractor": {
 		ID: "copper_extractor", Name: "Extraction Minière de Cuivre", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 20000, Product: "copper_ore", ProductQuantity: 15, ProductionTime: 120,
 		MaxEmployee: 3, EnergyType: EnergyTypeManuel, Icon: "/icons/mining_extractor.png",
+		MarketAvailable: true,
 	},
 	"iron_extractor": {
 		ID:              "iron_extractor",
@@ -243,6 +250,7 @@ var Items = map[string]Item{
 		MaxEmployee:     3,
 		EnergyType:      EnergyTypeManuel,
 		Icon:            "/icons/mining_extractor.png",
+		MarketAvailable: true,
 	},
 
 	// -------------------------------------------------------------------------
