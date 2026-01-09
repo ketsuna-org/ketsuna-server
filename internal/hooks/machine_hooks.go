@@ -159,10 +159,12 @@ func registerMachineHooks(app *pocketbase.PocketBase, inv *InventoryLogic, graph
 	// app.OnRecordUpdateRequest("machines").BindFunc(...)
 
 	app.OnRecordDeleteRequest("machines").BindFunc(func(e *core.RecordRequestEvent) error {
+		if e.Auth != nil && e.Auth.IsSuperuser() {
+			return e.Next()
+		}
 		record := e.Record
 		companyId := record.GetString("company")
 		machineItemId := record.GetString("machine_id")
-
 		if companyId != "" && machineItemId != "" {
 			if err := inv.UpdateInventory(app, companyId, machineItemId, 1); err != nil {
 				app.Logger().Error("[MACHINES] Erreur remise en stock", "error", err)
