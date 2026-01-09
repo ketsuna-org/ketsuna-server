@@ -216,6 +216,18 @@ var Items = map[string]Item{
 		BasePrice:   2500, EnergyType: EnergyTypeManuel, Icon: "/icons/charcoal_mine.png",
 		MarketAvailable: true,
 	},
+	"sand_extractor": {
+		ID: "sand_extractor", Name: "Extracteur de Sable", Type: ItemTypeMachine, Unit: UnitUnit,
+		BasePrice: 1500, Product: "silica", ProductQuantity: 20, ProductionTime: 120,
+		MaxEmployee: 2, EnergyType: EnergyTypeManuel, Icon: "/icons/sand_extractor.png",
+		MarketAvailable: true,
+	},
+	"quarry": {
+		ID: "quarry", Name: "Carrière", Type: ItemTypeMachine, Unit: UnitUnit,
+		BasePrice: 2000, Product: "stone", ProductQuantity: 20, ProductionTime: 120,
+		MaxEmployee: 2, EnergyType: EnergyTypeManuel, Icon: "/icons/quarry.png",
+		MarketAvailable: true,
+	},
 
 	// -------------------------------------------------------------------------
 	// MACHINES - Tier 2 (Niveau 3+)
@@ -273,6 +285,12 @@ var Items = map[string]Item{
 		MaxEmployee: 3, EnergyType: EnergyTypeManuel, Icon: "⚙️",
 		MarketAvailable: true,
 	},
+	"gold_mine": {
+		ID: "gold_mine", Name: "Mine d'Or", Type: ItemTypeMachine, Unit: UnitUnit,
+		BasePrice: 50000, Product: "gold_ore", ProductQuantity: 5, ProductionTime: 180,
+		MaxEmployee: 3, EnergyType: EnergyTypeManuel, Icon: "/icons/gold_mine.png",
+		MarketAvailable: true,
+	},
 
 	// -------------------------------------------------------------------------
 	// MACHINES - Tier 4 (Niveau 10+)
@@ -287,6 +305,12 @@ var Items = map[string]Item{
 		ID: "petrol_pumpjack", Name: "Pompe à Pétrole", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 45000, Product: "crude_oil", ProductQuantity: 15, ProductionTime: 120,
 		MaxEmployee: 1, EnergyType: EnergyTypeManuel, Icon: "/icons/petrol_pumpjack.png",
+		MarketAvailable: true,
+	},
+	"lithium_extractor": {
+		ID: "lithium_extractor", Name: "Extracteur de Lithium", Type: ItemTypeMachine, Unit: UnitUnit,
+		BasePrice: 75000, Product: "lithium", ProductQuantity: 10, ProductionTime: 150,
+		MaxEmployee: 3, EnergyType: EnergyTypeManuel, Icon: "/icons/lithium_extractor.png",
 		MarketAvailable: true,
 	},
 	"assembly_line": {

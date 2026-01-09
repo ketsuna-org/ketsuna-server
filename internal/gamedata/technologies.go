@@ -33,7 +33,7 @@ var Technologies = map[string]Technology{
 		ID: "basic_automation", Name: "Un début d'automatisation", Category: "general",
 		Description: "Débloquer les premières machines pour automatiser la production.",
 		Cost:        1000, RequiredLevel: 1,
-		ItemUnlocked: []string{"forestry_machine", "basic_mining_machine", "sawmill", "wooden_plank"},
+		ItemUnlocked: []string{"forestry_machine", "basic_mining_machine", "sawmill", "wooden_plank", "sand_extractor", "quarry"},
 		Icon:         "⚙️",
 	},
 	"solar_power": {
@@ -83,6 +83,14 @@ var Technologies = map[string]Technology{
 		ItemUnlocked:  []string{"glass_furnace", "glass"},
 		Icon:          "🪟",
 	},
+	"gold_mining": {
+		ID: "gold_mining", Name: "Extraction Aurifère", Category: "resource",
+		Description: "Techniques d'extraction spécialisées pour les gisements d'or.",
+		Cost:        50000, RequiredLevel: 5,
+		Prerequisites: []string{"basic_metallurgy"},
+		ItemUnlocked:  []string{"gold_mine"},
+		Icon:          "💎",
+	},
 	"steel_production": {
 		ID: "steel_production", Name: "Forge d'Acier", Category: "industry",
 		Description: "Produire de l'acier à partir de lingots de fer.",
@@ -110,6 +118,14 @@ var Technologies = map[string]Technology{
 		Prerequisites: []string{"steel_production"},
 		ItemUnlocked:  []string{"oil_refinery", "plastic", "crude_oil", "electric_cable", "petrol_pumpjack"},
 		Icon:          "🛢️",
+	},
+	"lithium_extraction": {
+		ID: "lithium_extraction", Name: "Extraction du Lithium", Category: "resource",
+		Description: "Extraire le lithium, composant essentiel des batteries modernes.",
+		Cost:        100000, RequiredLevel: 10,
+		Prerequisites: []string{"plastic_era"},
+		ItemUnlocked:  []string{"lithium_extractor"},
+		Icon:          "🔋",
 	},
 
 	// -------------------------------------------------------------------------
