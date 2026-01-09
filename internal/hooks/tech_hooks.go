@@ -13,6 +13,10 @@ func registerCompanyTechHooks(app *pocketbase.PocketBase) {
 	})
 
 	app.OnRecordUpdateRequest("company_techs").BindFunc(func(e *core.RecordRequestEvent) error {
+		// Allow Admin/Superuser
+		if e.Auth != nil && e.Auth.IsSuperuser() {
+			return e.Next()
+		}
 		return apis.NewBadRequestError("Impossible de modifier une technologie déjà achetée", nil)
 	})
 

@@ -98,6 +98,9 @@ func registerInventoryHooks(app *pocketbase.PocketBase) {
 
 	app.OnRecordUpdateRequest("inventory").BindFunc(func(e *core.RecordRequestEvent) error {
 		rec := e.Record
+		if e.Auth != nil && e.Auth.IsSuperuser() {
+			return e.Next()
+		}
 		orig := rec.Original()
 		if rec.GetString("item") != orig.GetString("item") || rec.GetString("company") != orig.GetString("company") {
 			return apis.NewBadRequestError("Action illégale : Impossible de transférer cet inventaire.", nil)

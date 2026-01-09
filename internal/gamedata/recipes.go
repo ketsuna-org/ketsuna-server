@@ -169,9 +169,9 @@ var Recipes = map[string]Recipe{
 	// -------------------------------------------------------------------------
 	"oil_platform_recipe": {
 		ID: "oil_platform_recipe", Name: "Construction Plateforme Pétrolière",
-		OutputItem: "oil_platform", OutputQuantity: 1, ProductionTime: 7200, // 2 heures
+		OutputItem: "oil_platform", OutputQuantity: 1, ProductionTime: 200, // 3 minutes et 20 secondes
 		RequiredTech: "oil_platform_tech", MachineType: "assembly_line",
-		ManualCraftable: false, // Uniquement via machine
+		ManualCraftable: true, // Uniquement via machine
 		Inputs: []RecipeIngredient{
 			{ItemID: "petrol_pumpjack", Quantity: 100},
 			{ItemID: "steel", Quantity: 500},
@@ -183,7 +183,7 @@ var Recipes = map[string]Recipe{
 		ID: "reinforced_steel_recipe", Name: "Fabrication Acier Renforcé",
 		OutputItem: "reinforced_steel", OutputQuantity: 5, ProductionTime: 180,
 		RequiredTech: "advanced_steel_tech", MachineType: "steel_press",
-		ManualCraftable: false,
+		ManualCraftable: true,
 		Inputs: []RecipeIngredient{
 			{ItemID: "steel", Quantity: 10},
 			{ItemID: "iron_ingot", Quantity: 5},

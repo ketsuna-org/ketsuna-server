@@ -66,6 +66,24 @@ func (l *InventoryLogic) UpdateInventory(app core.App, companyId, itemId string,
 
 // HasEnoughItems checks if company has enough of an item
 func (l *InventoryLogic) HasEnoughItems(app core.App, companyId, itemId string, requiredQty int) bool {
+	// Check item type
+	item := gamedata.GetItem(itemId)
+	if item != nil && item.Type == "Machine" {
+		// For machines, count unplaced machines in machines collection
+		// using machine_id field
+		records, err := app.FindRecordsByFilter("machines",
+			fmt.Sprintf("company = '%s' && machine_id = '%s' && placed = false", companyId, itemId),
+			"-created",
+			requiredQty, // Limit to required quantity to optimize
+			0,
+		)
+		if err != nil {
+			return false
+		}
+		return len(records) >= requiredQty
+	}
+
+	// For standard items, check inventory collection
 	filter := fmt.Sprintf("company = '%s' && item_id = '%s'", companyId, itemId)
 	record, err := app.FindFirstRecordByFilter("inventory", filter)
 	if err != nil || record == nil {
@@ -107,6 +125,28 @@ func (l *InventoryLogic) ConsumeItem(app core.App, companyId, itemId string, qua
 	if !l.HasEnoughItems(app, companyId, itemId, quantity) {
 		return 0, fmt.Errorf("stock insuffisant")
 	}
+
+	item := gamedata.GetItem(itemId)
+	if item != nil && item.Type == "Machine" {
+		// Consume machines
+		records, err := app.FindRecordsByFilter("machines",
+			fmt.Sprintf("company = '%s' && machine_id = '%s' && placed = false", companyId, itemId),
+			"-created",
+			quantity,
+			0,
+		)
+		if err != nil || len(records) < quantity {
+			return 0, fmt.Errorf("pas assez de machines '%s' non placées (requis: %d)", item.Name, quantity)
+		}
+
+		for _, r := range records {
+			if err := app.Delete(r); err != nil {
+				return 0, err
+			}
+		}
+		return 0, nil
+	}
+
 	if err := l.UpdateInventory(app, companyId, itemId, -quantity); err != nil {
 		return 0, err
 	}
@@ -156,8 +196,32 @@ func (l *InventoryLogic) ConsumeInputs(app core.App, companyId, recipeId string,
 	// 3. Consume Items from static recipe inputs
 	for _, input := range recipe.Inputs {
 		totalRequired := input.Quantity * quantity
-		if err := l.UpdateInventory(app, companyId, input.ItemID, -totalRequired); err != nil {
-			return 0, err
+
+		// Check if it's a machine
+		item := gamedata.GetItem(input.ItemID)
+		if item != nil && item.Type == "Machine" {
+			// Find unplaced machines to delete
+			records, err := app.FindRecordsByFilter("machines",
+				fmt.Sprintf("company = '%s' && machine_id = '%s' && placed = false", companyId, input.ItemID),
+				"-created", // Delete newest first? Or oldest? Doesn't matter much for identical machines
+				totalRequired,
+				0,
+			)
+			if err != nil || len(records) < totalRequired {
+				return 0, fmt.Errorf("erreur fatale: stock de machines '%s' a changé pendant la transaction", item.Name)
+			}
+
+			// Delete them
+			for _, r := range records {
+				if err := app.Delete(r); err != nil {
+					return 0, err
+				}
+			}
+		} else {
+			// Standard inventory item
+			if err := l.UpdateInventory(app, companyId, input.ItemID, -totalRequired); err != nil {
+				return 0, err
+			}
 		}
 	}
 
