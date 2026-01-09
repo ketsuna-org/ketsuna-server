@@ -290,10 +290,12 @@ var Items = map[string]Item{
 		ID: "oil_platform", Name: "Plateforme Pétrolière Offshore", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 500000, Product: "crude_oil", ProductQuantity: 2000, ProductionTime: 200,
 		MaxEmployee: 10, EnergyType: EnergyTypeManuel, Icon: "🏗️",
+		MarketAvailable: false,
 	},
 	"reinforced_steel": {
 		ID: "reinforced_steel", Name: "Acier Renforcé", Type: ItemTypeComposant, Unit: UnitUnit,
 		BasePrice: 150, Volatility: 0.15, Icon: "🛡️",
+		MarketAvailable: false,
 	},
 
 	// -------------------------------------------------------------------------
