@@ -48,15 +48,16 @@ type MachineMetadata struct {
 
 // Item represents a static game item definition
 type Item struct {
-	ID           string   `json:"id"`
-	Name         string   `json:"name"`
-	Type         ItemType `json:"type"`
-	BasePrice    float64  `json:"base_price"`
-	Volatility   float64  `json:"volatility,omitempty"`
-	Icon         string   `json:"icon,omitempty"`
-	Unit         Unit     `json:"unit"`          // kg, l, u
-	Minable      bool     `json:"minable"`       // Can be harvested by CEO
-	IsExplorable bool     `json:"is_explorable"` // Can be found via exploration
+	ID              string   `json:"id"`
+	Name            string   `json:"name"`
+	Type            ItemType `json:"type"`
+	BasePrice       float64  `json:"base_price"`
+	Volatility      float64  `json:"volatility,omitempty"`
+	Icon            string   `json:"icon,omitempty"`
+	Unit            Unit     `json:"unit"`             // kg, l, u
+	Minable         bool     `json:"minable"`          // Can be harvested by CEO
+	IsExplorable    bool     `json:"is_explorable"`    // Can be found via exploration
+	MarketAvailable bool     `json:"market_available"` // If true, can be bought on market
 	// Machine-specific fields (deprecated, use Metadata)
 	Product         string     `json:"product,omitempty"`
 	ProductQuantity int        `json:"product_quantity,omitempty"`
@@ -84,27 +85,27 @@ var Items = map[string]Item{
 	// -------------------------------------------------------------------------
 	"wood": {
 		ID: "wood", Name: "Bois", Type: ItemTypeRessourceBrute, Unit: UnitKg,
-		BasePrice: 2, Volatility: 0, Minable: true, IsExplorable: false, Icon: "🪵",
+		BasePrice: 2, Volatility: 0, Minable: true, IsExplorable: false, MarketAvailable: true, Icon: "🪵",
 	},
 	"stone": {
 		ID: "stone", Name: "Pierre", Type: ItemTypeRessourceBrute, Unit: UnitKg,
-		BasePrice: 2.5, Volatility: 0, Minable: true, IsExplorable: false, Icon: "🪨",
+		BasePrice: 2.5, Volatility: 0, Minable: true, IsExplorable: false, MarketAvailable: true, Icon: "🪨",
 	},
 	"silica": {
 		ID: "silica", Name: "Silice (Sable)", Type: ItemTypeRessourceBrute, Unit: UnitKg,
-		BasePrice: 0.5, Volatility: 0.10, Minable: true, IsExplorable: false, Icon: "🏜️",
+		BasePrice: 0.5, Volatility: 0.10, Minable: true, IsExplorable: false, MarketAvailable: true, Icon: "🏜️",
 	},
 	"iron_ore": {
 		ID: "iron_ore", Name: "Minerai de Fer", Type: ItemTypeRessourceBrute, Unit: UnitKg,
-		BasePrice: 15, Volatility: 0.15, Minable: false, IsExplorable: true, Icon: "🔩",
+		BasePrice: 15, Volatility: 0.15, Minable: false, IsExplorable: true, MarketAvailable: true, Icon: "🔩",
 	},
 	"copper_ore": {
 		ID: "copper_ore", Name: "Minerai de Cuivre", Type: ItemTypeRessourceBrute, Unit: UnitKg,
-		BasePrice: 15, Volatility: 0.20, Minable: false, IsExplorable: true, Icon: "🟠",
+		BasePrice: 15, Volatility: 0.20, Minable: false, IsExplorable: true, MarketAvailable: true, Icon: "🟠",
 	},
 	"coal": {
 		ID: "coal", Name: "Charbon", Type: ItemTypeRessourceBrute, Unit: UnitKg,
-		BasePrice: 8, Volatility: 0.25, Minable: false, IsExplorable: true, Icon: "🪨",
+		BasePrice: 8, Volatility: 0.25, Minable: false, IsExplorable: true, MarketAvailable: true, Icon: "🪨",
 	},
 	"gold_ore": {
 		ID: "gold_ore", Name: "Or Brut", Type: ItemTypeRessourceBrute, Unit: UnitKg,
@@ -116,7 +117,7 @@ var Items = map[string]Item{
 	},
 	"lithium": {
 		ID: "lithium", Name: "Lithium", Type: ItemTypeRessourceBrute, Unit: UnitKg,
-		BasePrice:  20, Volatility: 0.60, Minable: false, IsExplorable: false, Icon: "🔋",
+		BasePrice: 20, Volatility: 0.60, Minable: false, IsExplorable: false, Icon: "🔋",
 	},
 
 	// -------------------------------------------------------------------------
@@ -209,7 +210,7 @@ var Items = map[string]Item{
 		ID: "charcoal_mine", Name: "Mine de Charbon", Type: ItemTypeMachine, Unit: UnitUnit,
 		ProductionTime: 120, Product: "coal", ProductQuantity: 10,
 		MaxEmployee: 2,
-		BasePrice: 2500, EnergyType: EnergyTypeManuel, Icon: "/icons/charcoal_mine.png",
+		BasePrice:   2500, EnergyType: EnergyTypeManuel, Icon: "/icons/charcoal_mine.png",
 	},
 
 	// -------------------------------------------------------------------------
@@ -250,16 +251,19 @@ var Items = map[string]Item{
 	"thermal_plant": {
 		ID: "thermal_plant", Name: "Central Thermique", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 20000, EnergyType: EnergyTypeManuel, MaxEmployee: 4, Icon: "🔥",
+		MarketAvailable: true,
 	},
 	"glass_furnace": {
 		ID: "glass_furnace", Name: "Four à Verre", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 8500, UseRecipe: "glass_recipe", ProductionTime: 60,
 		MaxEmployee: 2, EnergyType: EnergyTypeManuel, Icon: "🔥",
+		MarketAvailable: true,
 	},
 	"steel_press": {
 		ID: "steel_press", Name: "Presse à Acier", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 15000, UseRecipe: "steel_recipe", ProductionTime: 120,
 		MaxEmployee: 3, EnergyType: EnergyTypeManuel, Icon: "⚙️",
+		MarketAvailable: true,
 	},
 
 	// -------------------------------------------------------------------------
@@ -269,16 +273,27 @@ var Items = map[string]Item{
 		ID: "oil_refinery", Name: "Raffinerie", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 45000, UseRecipe: "plastic_recipe", ProductionTime: 120,
 		MaxEmployee: 5, EnergyType: EnergyTypeManuel, Icon: "🏭",
+		MarketAvailable: true,
 	},
 	"petrol_pumpjack": {
 		ID: "petrol_pumpjack", Name: "Pompe à Pétrole", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 45000, Product: "crude_oil", ProductQuantity: 15, ProductionTime: 120,
 		MaxEmployee: 1, EnergyType: EnergyTypeManuel, Icon: "/icons/petrol_pumpjack.png",
+		MarketAvailable: true,
 	},
 	"assembly_line": {
 		ID: "assembly_line", Name: "Ligne d'Assemblage", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 85000, UseRecipe: "electric_motor_recipe", ProductionTime: 360,
 		MaxEmployee: 8, EnergyType: EnergyTypeManuel, Icon: "🏭",
+	},
+	"oil_platform": {
+		ID: "oil_platform", Name: "Plateforme Pétrolière Offshore", Type: ItemTypeMachine, Unit: UnitUnit,
+		BasePrice: 500000, Product: "crude_oil", ProductQuantity: 2000, ProductionTime: 200,
+		MaxEmployee: 10, EnergyType: EnergyTypeManuel, Icon: "🏗️",
+	},
+	"reinforced_steel": {
+		ID: "reinforced_steel", Name: "Acier Renforcé", Type: ItemTypeComposant, Unit: UnitUnit,
+		BasePrice: 150, Volatility: 0.15, Icon: "🛡️",
 	},
 
 	// -------------------------------------------------------------------------
@@ -350,11 +365,11 @@ func GetItemsByType(itemType ItemType) []Item {
 	return result
 }
 
-// GetMarketItems returns items available in the market (excludes "Produit Fini")
+// GetMarketItems returns items available for purchase on the market
 func GetMarketItems() []Item {
 	var result []Item
 	for _, item := range Items {
-		if item.Type != ItemTypeProduitFini {
+		if item.MarketAvailable {
 			result = append(result, item)
 		}
 	}

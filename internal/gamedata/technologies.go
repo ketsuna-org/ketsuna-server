@@ -1,16 +1,24 @@
 package gamedata
 
+// RequiredItem represents an item requirement for unlocking a technology
+type RequiredItem struct {
+	ItemID   string `json:"item_id"`
+	Quantity int    `json:"quantity"`
+}
+
 // Technology represents a researchable technology
 type Technology struct {
-	ID            string   `json:"id"`
-	Name          string   `json:"name"`
-	Description   string   `json:"description"`
-	Cost          float64  `json:"cost"`           // Cost in money to unlock
-	RequiredLevel int      `json:"required_level"` // Minimum company level
-	ItemUnlocked  []string `json:"item_unlocked"`  // Item IDs unlocked by this tech
-	Prerequisites []string `json:"prerequisites"`  // Tech IDs required before this one
-	Category      string   `json:"category"`       // general, resource, industry, tech
-	Icon          string   `json:"icon,omitempty"`
+	ID            string         `json:"id"`
+	Name          string         `json:"name"`
+	Description   string         `json:"description"`
+	Cost          float64        `json:"cost"`           // Cost in money to unlock
+	RequiredLevel int            `json:"required_level"` // Minimum company level
+	UnlockTime    int            `json:"unlock_time"`    // Seconds to unlock (0 = instant)
+	RequiredItems []RequiredItem `json:"required_items"` // Items consumed from inventory to unlock
+	ItemUnlocked  []string       `json:"item_unlocked"`  // Item IDs unlocked by this tech
+	Prerequisites []string       `json:"prerequisites"`  // Tech IDs required before this one
+	Category      string         `json:"category"`       // general, resource, industry, tech
+	Icon          string         `json:"icon,omitempty"`
 }
 
 // =============================================================================
@@ -100,8 +108,32 @@ var Technologies = map[string]Technology{
 		Description: "Raffiner le pétrole en plastique, matériau révolutionnaire.",
 		Cost:        1000000, RequiredLevel: 10,
 		Prerequisites: []string{"steel_production"},
-		ItemUnlocked:  []string{"oil_refinery", "plastic", "crude_oil", "electric_cable"},
+		ItemUnlocked:  []string{"oil_refinery", "plastic", "crude_oil", "electric_cable", "petrol_pumpjack"},
 		Icon:          "🛢️",
+	},
+
+	// -------------------------------------------------------------------------
+	// TIER 4.5 - Technologies Avancées avec Temps et Items Requis
+	// -------------------------------------------------------------------------
+	"oil_platform_tech": {
+		ID: "oil_platform_tech", Name: "Plateforme Pétrolière Offshore", Category: "industry",
+		Description: "Construire une immense plateforme pour extraire le pétrole en haute mer. Nécessite 100 pompes à pétrole.",
+		Cost:        500000, RequiredLevel: 12,
+		UnlockTime:    36000, // 10 heure
+		Prerequisites: []string{"plastic_era"},
+		RequiredItems: []RequiredItem{{ItemID: "petrol_pumpjack", Quantity: 100}},
+		ItemUnlocked:  []string{"oil_platform"},
+		Icon:          "🏗️",
+	},
+	"advanced_steel_tech": {
+		ID: "advanced_steel_tech", Name: "Acier Renforcé", Category: "industry",
+		Description: "Développer un acier de haute qualité pour les constructions avancées. Nécessite 50 aciers.",
+		Cost:        250000, RequiredLevel: 10,
+		UnlockTime:    1800, // 30 minutes
+		Prerequisites: []string{"steel_production"},
+		RequiredItems: []RequiredItem{{ItemID: "steel", Quantity: 50}},
+		ItemUnlocked:  []string{"reinforced_steel"},
+		Icon:          "⚙️",
 	},
 
 	// -------------------------------------------------------------------------

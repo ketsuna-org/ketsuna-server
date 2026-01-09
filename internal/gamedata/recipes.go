@@ -8,15 +8,16 @@ type RecipeIngredient struct {
 
 // Recipe represents a crafting recipe
 type Recipe struct {
-	ID             string             `json:"id"`
-	Name           string             `json:"name"`
-	OutputItem     string             `json:"output_item"`     // Item ID produced
-	OutputQuantity int                `json:"output_quantity"` // Quantity produced per craft
-	ProductionTime int                `json:"production_time"` // Seconds to complete
-	RequiredTech   string             `json:"required_tech"`   // Technology ID required
-	Inputs         []RecipeIngredient `json:"inputs"`          // Required ingredients
-	MachineType    string             `json:"machine_type"`    // Machine ID that can execute this recipe (empty = manual)
-	Icon           string             `json:"icon,omitempty"`
+	ID              string             `json:"id"`
+	Name            string             `json:"name"`
+	OutputItem      string             `json:"output_item"`      // Item ID produced
+	OutputQuantity  int                `json:"output_quantity"`  // Quantity produced per craft
+	ProductionTime  int                `json:"production_time"`  // Seconds to complete
+	RequiredTech    string             `json:"required_tech"`    // Technology ID required
+	Inputs          []RecipeIngredient `json:"inputs"`           // Required ingredients
+	MachineType     string             `json:"machine_type"`     // Machine ID that can execute this recipe (empty = any/manual)
+	ManualCraftable bool               `json:"manual_craftable"` // If true, player can craft manually in factory
+	Icon            string             `json:"icon,omitempty"`
 }
 
 // =============================================================================
@@ -161,6 +162,33 @@ var Recipes = map[string]Recipe{
 			{ItemID: "steel", Quantity: 5},
 		},
 		Icon: "🖥️",
+	},
+
+	// -------------------------------------------------------------------------
+	// MACHINES AVANCÉES (Craft-only)
+	// -------------------------------------------------------------------------
+	"oil_platform_recipe": {
+		ID: "oil_platform_recipe", Name: "Construction Plateforme Pétrolière",
+		OutputItem: "oil_platform", OutputQuantity: 1, ProductionTime: 7200, // 2 heures
+		RequiredTech: "oil_platform_tech", MachineType: "assembly_line",
+		ManualCraftable: false, // Uniquement via machine
+		Inputs: []RecipeIngredient{
+			{ItemID: "petrol_pumpjack", Quantity: 100},
+			{ItemID: "steel", Quantity: 500},
+			{ItemID: "plastic", Quantity: 200},
+		},
+		Icon: "🏗️",
+	},
+	"reinforced_steel_recipe": {
+		ID: "reinforced_steel_recipe", Name: "Fabrication Acier Renforcé",
+		OutputItem: "reinforced_steel", OutputQuantity: 5, ProductionTime: 180,
+		RequiredTech: "advanced_steel_tech", MachineType: "steel_press",
+		ManualCraftable: false,
+		Inputs: []RecipeIngredient{
+			{ItemID: "steel", Quantity: 10},
+			{ItemID: "iron_ingot", Quantity: 5},
+		},
+		Icon: "🛡️",
 	},
 }
 

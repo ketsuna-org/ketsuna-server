@@ -3,6 +3,7 @@ package endpoints
 import (
 	"fmt"
 	"math"
+	"time"
 
 	"ketsuna.com/server/internal/gamedata"
 	"ketsuna.com/server/internal/hooks"
@@ -165,11 +166,17 @@ func registerCompanyEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, ec
 				return apis.NewBadRequestError(fmt.Sprintf("Niveau insuffisant. Niveau %d requis (vous êtes niveau %d)", reqLevel, currLevel), nil)
 			}
 
-			// Check duplicates
+			// Check duplicates or in-progress
 			filter := fmt.Sprintf("company = '%s' && technology_id = '%s'", data.CompanyId, data.TechId)
 			existing, _ := txApp.FindFirstRecordByFilter("company_techs", filter)
 			if existing != nil {
-				return apis.NewBadRequestError("Cette technologie est déjà acquise", nil)
+				status := existing.GetString("status")
+				if status == "completed" {
+					return apis.NewBadRequestError("Cette technologie est déjà acquise", nil)
+				}
+				if status == "pending" {
+					return apis.NewBadRequestError("Cette technologie est déjà en cours de recherche", nil)
+				}
 			}
 
 			// Check Balance
@@ -177,6 +184,55 @@ func registerCompanyEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, ec
 			balance := company.GetFloat("balance")
 			if balance < cost {
 				return apis.NewBadRequestError(fmt.Sprintf("Fonds insuffisants. Requis: %.2f, Actuel: %.2f", cost, balance), nil)
+			}
+
+			// Check Required Items (inventory for regular items, machines for machine items)
+			for _, reqItem := range tech.RequiredItems {
+				itemDef := gamedata.GetItem(reqItem.ItemID)
+				itemName := gamedata.GetItemName(reqItem.ItemID)
+
+				if itemDef != nil && itemDef.Type == gamedata.ItemTypeMachine {
+					// Check in machines collection
+					machineFilter := fmt.Sprintf("company = '%s' && machine_id = '%s'", data.CompanyId, reqItem.ItemID)
+					machines, _ := txApp.FindRecordsByFilter("machines", machineFilter, "", 0, 0)
+					if len(machines) < reqItem.Quantity {
+						return apis.NewBadRequestError(fmt.Sprintf("Machines requises manquantes: %dx %s (vous avez %d)", reqItem.Quantity, itemName, len(machines)), nil)
+					}
+				} else {
+					// Check in inventory
+					invFilter := fmt.Sprintf("company = '%s' && item_id = '%s'", data.CompanyId, reqItem.ItemID)
+					invRecord, _ := txApp.FindFirstRecordByFilter("inventory", invFilter)
+					if invRecord == nil {
+						return apis.NewBadRequestError(fmt.Sprintf("Item requis manquant: %dx %s", reqItem.Quantity, itemName), nil)
+					}
+					qty := invRecord.GetFloat("quantity")
+					if qty < float64(reqItem.Quantity) {
+						return apis.NewBadRequestError(fmt.Sprintf("Quantité insuffisante: %dx %s (vous avez %.0f)", reqItem.Quantity, itemName, qty), nil)
+					}
+				}
+			}
+
+			// Consume Required Items
+			for _, reqItem := range tech.RequiredItems {
+				itemDef := gamedata.GetItem(reqItem.ItemID)
+
+				if itemDef != nil && itemDef.Type == gamedata.ItemTypeMachine {
+					// Delete machines from machines collection
+					machineFilter := fmt.Sprintf("company = '%s' && machine_id = '%s'", data.CompanyId, reqItem.ItemID)
+					machines, _ := txApp.FindRecordsByFilter("machines", machineFilter, "", reqItem.Quantity, 0)
+					for _, machine := range machines {
+						txApp.Delete(machine)
+					}
+				} else {
+					// Deduct from inventory
+					invFilter := fmt.Sprintf("company = '%s' && item_id = '%s'", data.CompanyId, reqItem.ItemID)
+					invRecord, _ := txApp.FindFirstRecordByFilter("inventory", invFilter)
+					if invRecord != nil {
+						newQty := invRecord.GetFloat("quantity") - float64(reqItem.Quantity)
+						invRecord.Set("quantity", newQty)
+						txApp.Save(invRecord)
+					}
+				}
 			}
 
 			// Create company_techs record
@@ -187,6 +243,36 @@ func registerCompanyEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, ec
 			newTech := core.NewRecord(collection)
 			newTech.Set("company", data.CompanyId)
 			newTech.Set("technology_id", data.TechId)
+
+			// Handle timed unlock
+			if tech.UnlockTime > 0 {
+				newTech.Set("status", "pending")
+				completedAt := time.Now().Add(time.Duration(tech.UnlockTime) * time.Second)
+				newTech.Set("completed_at", completedAt)
+
+				if err := txApp.Save(newTech); err != nil {
+					return apis.NewBadRequestError(fmt.Sprintf("Erreur lors du déblocage: %v", err), err)
+				}
+
+				// Deduct Balance
+				company.Set("balance", balance-cost)
+				if err := txApp.Save(company); err != nil {
+					return apis.NewBadRequestError("Erreur lors du paiement", err)
+				}
+
+				return c.JSON(200, map[string]interface{}{
+					"success":      true,
+					"message":      fmt.Sprintf("Recherche de %s lancée!", tech.Name),
+					"status":       "pending",
+					"unlock_time":  tech.UnlockTime,
+					"completed_at": completedAt,
+					"cost":         cost,
+				})
+			}
+
+			// Instant unlock
+			newTech.Set("status", "completed")
+			newTech.Set("completed_at", time.Now())
 
 			if err := txApp.Save(newTech); err != nil {
 				return apis.NewBadRequestError(fmt.Sprintf("Erreur lors du déblocage: %v", err), err)
@@ -200,7 +286,8 @@ func registerCompanyEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, ec
 
 			return c.JSON(200, map[string]interface{}{
 				"success": true,
-				"message": fmt.Sprintf("Technologie %s débloquée !", tech.Name),
+				"message": fmt.Sprintf("Technologie %s débloquée!", tech.Name),
+				"status":  "completed",
 				"cost":    cost,
 			})
 		})

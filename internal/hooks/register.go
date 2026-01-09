@@ -40,7 +40,13 @@ func RegisterHooks(app *pocketbase.PocketBase, inv *InventoryLogic, eco *Economy
 	// Run data correction and initialization on startup
 	app.OnServe().BindFunc(func(e *core.ServeEvent) error {
 
-		app.Logger().Info("[STARTUP] Running initial Market Supply Update...")
+		app.Logger().Info("[STARTUP] Running initialization...")
+
+		// Migrate existing company_techs to have status="completed"
+		MigrateTechStatusOnStartup(app)
+
+		// Ensure all companies have wood deposit and CEO
+		InitializeCompaniesOnStartup(app)
 
 		return e.Next()
 	})

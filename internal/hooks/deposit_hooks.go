@@ -1,6 +1,8 @@
 package hooks
 
 import (
+	"fmt"
+
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
@@ -45,6 +47,40 @@ func registerDepositHooks(app *pocketbase.PocketBase) {
 
 		// Optional: Log the valid move
 		// app.Logger().Info("[DEPOSITS] Location updated", "id", newRecord.Id, "new_loc", newRecord.GetString("location"))
+
+		return e.Next()
+	})
+
+	// Auto-delete empty deposits (quantity = 0) and their connected edges
+	app.OnRecordAfterUpdateSuccess("deposits").BindFunc(func(e *core.RecordEvent) error {
+		record := e.Record
+		quantity := record.GetFloat("quantity")
+
+		// Check if deposit is empty
+		if quantity <= 0 {
+			depositId := record.Id
+			app.Logger().Info("[DEPOSITS] Deposit is empty, cleaning up", "id", depositId)
+
+			// Delete all connected edges first
+			edgeFilter := fmt.Sprintf("source_id = '%s' || target_id = '%s'", depositId, depositId)
+			edges, err := app.FindRecordsByFilter("edge_relation", edgeFilter, "", 0, 0)
+			if err == nil {
+				for _, edge := range edges {
+					if err := app.Delete(edge); err != nil {
+						app.Logger().Error("[DEPOSITS] Failed to delete edge", "edge_id", edge.Id, "err", err)
+					} else {
+						app.Logger().Info("[DEPOSITS] Deleted connected edge", "edge_id", edge.Id)
+					}
+				}
+			}
+
+			// Delete the deposit itself
+			if err := app.Delete(record); err != nil {
+				app.Logger().Error("[DEPOSITS] Failed to delete empty deposit", "id", depositId, "err", err)
+			} else {
+				app.Logger().Info("[DEPOSITS] Deleted empty deposit", "id", depositId)
+			}
+		}
 
 		return e.Next()
 	})

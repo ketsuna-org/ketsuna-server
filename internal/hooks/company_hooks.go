@@ -17,7 +17,7 @@ func registerCompanyHooks(app *pocketbase.PocketBase) {
 		}
 
 		if r.GetString("is_npc") != "true" {
-			r.Set("balance", 0)
+			r.Set("balance", 1000) // Starting balance for new players
 		} else if r.GetString("balance") == "" {
 			r.Set("balance", 0)
 		}

@@ -361,6 +361,9 @@ func (gt *GraphTraversal) ProcessMachine(machineId, requestedBy string, recursiv
 					deposit.Set("quantity", math.Round(newQty))
 					gt.app.Save(deposit)
 
+					// Record consumption statistic
+					gt.recordStatistic(machine.GetString("company"), deposit.GetString("ressource_id"), "consumption", consumed)
+
 					gt.app.Logger().Info("[GRAPH] Machine Consumed from Deposit", "machine", machineId, "deposit", inputId, "consumed", consumed, "left", newQty)
 				}
 			case "storage":
@@ -391,9 +394,17 @@ func (gt *GraphTraversal) ProcessMachine(machineId, requestedBy string, recursiv
 					inv.Set("quantity", newQty)
 					gt.app.Save(inv)
 
+					// Record consumption statistic
+					gt.recordStatistic(machine.GetString("company"), inv.GetString("item_id"), "consumption", consumed)
+
 					gt.app.Logger().Info("[GRAPH] Machine Consumed from Storage", "machine", machineId, "storage", inputId, "consumed", consumed, "left", newQty)
 				}
 			}
+		}
+
+		// Record production statistic
+		if totalProduced > 0 {
+			gt.recordStatistic(machine.GetString("company"), outputItem, "production", totalProduced)
 		}
 	}
 
@@ -852,6 +863,30 @@ func (gt *GraphTraversal) checkFuelAvailable(_ string, fuelItems []string) bool 
 		}
 	}
 	return false
+}
+
+// recordStatistic records a production or consumption event for company statistics
+// eventType: "production", "consumption", "money_in", "money_out"
+func (gt *GraphTraversal) recordStatistic(companyId, itemId, eventType string, quantity float64) {
+	if quantity <= 0 || companyId == "" {
+		return
+	}
+
+	collection, err := gt.app.FindCollectionByNameOrId("company_statistics")
+	if err != nil {
+		gt.app.Logger().Error("[STATS] Failed to find company_statistics collection", "err", err)
+		return
+	}
+
+	record := core.NewRecord(collection)
+	record.Set("company", companyId)
+	record.Set("item_id", itemId)
+	record.Set("event_type", eventType)
+	record.Set("quantity", quantity)
+
+	if err := gt.app.Save(record); err != nil {
+		gt.app.Logger().Error("[STATS] Failed to save statistic", "err", err)
+	}
 }
 
 // TraverseStorages iterates all storage nodes for the company to trigger buffering

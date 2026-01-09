@@ -9,7 +9,7 @@ import (
 
 // InitializeCompaniesOnStartup ensures all companies have:
 // 1. A wood deposit (1M quantity, level 3) if they don't have any deposits
-// 2. A CEO employee (PDG, legendary, all stats = 1) if they don't have one
+// 2. A CEO employee (PDG) if they don't have one
 func InitializeCompaniesOnStartup(app *pocketbase.PocketBase) {
 	companies, err := app.FindRecordsByFilter("companies", "", "", 0, 0)
 	if err != nil {
@@ -17,26 +17,18 @@ func InitializeCompaniesOnStartup(app *pocketbase.PocketBase) {
 		return
 	}
 
-	// Find the "Bois" item for wood deposits
-	woodItems, err := app.FindRecordsByFilter("items", "name ~ 'Bois'", "", 1, 0)
-	var woodItemId string
-	if err == nil && len(woodItems) > 0 {
-		woodItemId = woodItems[0].Id
-	} else {
-		app.Logger().Warn("[STARTUP] Could not find 'Bois' item, skipping deposit creation")
-	}
+	// Use hardcoded "wood" resource ID (from gamedata)
+	woodItemId := "wood"
 
 	for _, company := range companies {
 		companyId := company.Id
 		companyName := company.GetString("name")
 
 		// 1. Check and create wood deposit if needed
-		if woodItemId != "" {
-			deposits, _ := app.FindRecordsByFilter("deposits", fmt.Sprintf("company = '%s'", companyId), "", 1, 0)
-			if len(deposits) == 0 {
-				createWoodDeposit(app, companyId, woodItemId)
-				app.Logger().Info("[STARTUP] Created wood deposit", "company", companyName)
-			}
+		deposits, _ := app.FindRecordsByFilter("deposits", fmt.Sprintf("company = '%s'", companyId), "", 1, 0)
+		if len(deposits) == 0 {
+			createWoodDeposit(app, companyId, woodItemId)
+			app.Logger().Info("[STARTUP] Created wood deposit", "company", companyName)
 		}
 
 		// 2. Check and create CEO if needed
@@ -54,21 +46,22 @@ func InitializeCompaniesOnStartup(app *pocketbase.PocketBase) {
 func createWoodDeposit(app *pocketbase.PocketBase, companyId string, woodItemId string) {
 	depositsCollection, err := app.FindCollectionByNameOrId("deposits")
 	if err != nil {
+		app.Logger().Error("[STARTUP] Failed to find deposits collection", "err", err)
 		return
 	}
 
 	deposit := core.NewRecord(depositsCollection)
 	deposit.Set("company", companyId)
-	deposit.Set("ressource", woodItemId)
-	deposit.Set("quantity", 1000000) // 1 million
-	deposit.Set("size", 3)           // Level 3
+	deposit.Set("ressource_id", woodItemId) // Use ressource_id (string), not ressource
+	deposit.Set("quantity", 1000000)        // 1 million
+	deposit.Set("size", 3)                  // Level 3
 
 	if err := app.Save(deposit); err != nil {
 		app.Logger().Error("[STARTUP] Failed to create wood deposit", "err", err)
 	}
 }
 
-// createCEOEmployee creates a legendary CEO employee with all stats = 1
+// createCEOEmployee creates a legendary CEO employee with balanced stats
 func createCEOEmployee(app *pocketbase.PocketBase, companyId string, companyName string) {
 	employeesCollection, err := app.FindCollectionByNameOrId("employees")
 	if err != nil {
@@ -79,13 +72,10 @@ func createCEOEmployee(app *pocketbase.PocketBase, companyId string, companyName
 	employee.Set("employer", companyId)
 	employee.Set("name", fmt.Sprintf("PDG de %s", companyName))
 	employee.Set("poste", "PDG")
-	employee.Set("rarity", 5)       // Legendary
-	employee.Set("salary", 0)       // CEO doesn't need salary
-	employee.Set("efficiency", 100) // Max efficiency
-	employee.Set("mining", 1)       // Stats start at 1
-	employee.Set("exploration_luck", 1)
-	employee.Set("energy", 100)
-	employee.Set("maintenance", 1)
+	employee.Set("salary", 0)           // CEO doesn't need salary
+	employee.Set("mining", 3)           // Can mine
+	employee.Set("exploration_luck", 5) // Good at exploration
+	employee.Set("maintenance", 3)      // Can maintain
 
 	if err := app.Save(employee); err != nil {
 		app.Logger().Error("[STARTUP] Failed to create CEO employee", "err", err)
@@ -100,14 +90,35 @@ func EnsureCEOOnCompanyCreation(app *pocketbase.PocketBase, companyId string, co
 
 // EnsureWoodDepositOnCompanyCreation is called when a company is created to auto-add a wood deposit
 func EnsureWoodDepositOnCompanyCreation(app *pocketbase.PocketBase, companyId string) {
-	// Find the "Bois" item
-	woodItems, err := app.FindRecordsByFilter("items", "name ~ 'Bois'", "", 1, 0)
-	if err != nil || len(woodItems) == 0 {
-		app.Logger().Warn("[COMPANY] Could not find 'Bois' item, skipping deposit creation")
+	// Use hardcoded "wood" resource ID (from gamedata)
+	createWoodDeposit(app, companyId, "wood")
+	app.Logger().Info("[COMPANY] Auto-created Wood Deposit for new company", "company", companyId)
+}
+
+// MigrateTechStatusOnStartup fixes existing company_techs records that don't have a status
+// Sets them to "completed" since they were unlocked before the timed system
+func MigrateTechStatusOnStartup(app *pocketbase.PocketBase) {
+	// Find all company_techs records without a status
+	records, err := app.FindRecordsByFilter("company_techs", "status = '' || status = null", "", 0, 0)
+	if err != nil {
+		app.Logger().Error("[STARTUP] Failed to fetch company_techs for migration", "err", err)
 		return
 	}
-	woodItemId := woodItems[0].Id
 
-	createWoodDeposit(app, companyId, woodItemId)
-	app.Logger().Info("[COMPANY] Auto-created Wood Deposit for new company", "company", companyId)
+	if len(records) == 0 {
+		app.Logger().Info("[STARTUP] No company_techs records to migrate")
+		return
+	}
+
+	migratedCount := 0
+	for _, record := range records {
+		record.Set("status", "completed")
+		if err := app.Save(record); err != nil {
+			app.Logger().Error("[STARTUP] Failed to migrate company_tech", "id", record.Id, "err", err)
+		} else {
+			migratedCount++
+		}
+	}
+
+	app.Logger().Info("[STARTUP] Migrated company_techs to completed status", "count", migratedCount)
 }

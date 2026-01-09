@@ -927,6 +927,109 @@
         "system": false
     },
     {
+        "id": "pbc_896568926",
+        "listRule": null,
+        "viewRule": null,
+        "createRule": null,
+        "updateRule": null,
+        "deleteRule": null,
+        "name": "company_statistics",
+        "type": "base",
+        "fields": [
+            {
+                "autogeneratePattern": "[a-z0-9]{15}",
+                "hidden": false,
+                "id": "text3208210256",
+                "max": 15,
+                "min": 15,
+                "name": "id",
+                "pattern": "^[a-z0-9]+$",
+                "presentable": false,
+                "primaryKey": true,
+                "required": true,
+                "system": true,
+                "type": "text"
+            },
+            {
+                "cascadeDelete": false,
+                "collectionId": "pbc_3866053794",
+                "hidden": false,
+                "id": "relation1337919823",
+                "maxSelect": 1,
+                "minSelect": 0,
+                "name": "company",
+                "presentable": false,
+                "required": false,
+                "system": false,
+                "type": "relation"
+            },
+            {
+                "autogeneratePattern": "",
+                "hidden": false,
+                "id": "text309285470",
+                "max": 0,
+                "min": 0,
+                "name": "item_id",
+                "pattern": "",
+                "presentable": false,
+                "primaryKey": false,
+                "required": false,
+                "system": false,
+                "type": "text"
+            },
+            {
+                "hidden": false,
+                "id": "select2467634050",
+                "maxSelect": 1,
+                "name": "event_type",
+                "presentable": false,
+                "required": false,
+                "system": false,
+                "type": "select",
+                "values": [
+                    "production",
+                    "consumption",
+                    "money_in",
+                    "money_out"
+                ]
+            },
+            {
+                "hidden": false,
+                "id": "number2683508278",
+                "max": null,
+                "min": null,
+                "name": "quantity",
+                "onlyInt": false,
+                "presentable": false,
+                "required": false,
+                "system": false,
+                "type": "number"
+            },
+            {
+                "hidden": false,
+                "id": "autodate2990389176",
+                "name": "created",
+                "onCreate": true,
+                "onUpdate": false,
+                "presentable": false,
+                "system": false,
+                "type": "autodate"
+            },
+            {
+                "hidden": false,
+                "id": "autodate3332085495",
+                "name": "updated",
+                "onCreate": true,
+                "onUpdate": true,
+                "presentable": false,
+                "system": false,
+                "type": "autodate"
+            }
+        ],
+        "indexes": [],
+        "system": false
+    },
+    {
         "id": "pbc_1190436199",
         "listRule": "",
         "viewRule": "  @request.auth.id = company.ceo.id",
@@ -976,6 +1079,31 @@
                 "required": false,
                 "system": false,
                 "type": "text"
+            },
+            {
+                "hidden": false,
+                "id": "select2063623452",
+                "maxSelect": 1,
+                "name": "status",
+                "presentable": false,
+                "required": false,
+                "system": false,
+                "type": "select",
+                "values": [
+                    "pending",
+                    "completed"
+                ]
+            },
+            {
+                "hidden": false,
+                "id": "date1410257210",
+                "max": "",
+                "min": "",
+                "name": "completed_at",
+                "presentable": false,
+                "required": false,
+                "system": false,
+                "type": "date"
             },
             {
                 "hidden": false,
@@ -1381,18 +1509,6 @@
             },
             {
                 "hidden": false,
-                "id": "number2534504849",
-                "max": 100,
-                "min": 0,
-                "name": "energy",
-                "onlyInt": false,
-                "presentable": false,
-                "required": false,
-                "system": false,
-                "type": "number"
-            },
-            {
-                "hidden": false,
                 "id": "number797243625",
                 "max": 10,
                 "min": 0,
@@ -1420,17 +1536,6 @@
                     "Explorateur",
                     "PDG"
                 ]
-            },
-            {
-                "hidden": false,
-                "id": "date2105166138",
-                "max": "",
-                "min": "",
-                "name": "energy_cycle_start",
-                "presentable": false,
-                "required": false,
-                "system": false,
-                "type": "date"
             },
             {
                 "hidden": false,
@@ -1765,18 +1870,6 @@
             },
             {
                 "hidden": false,
-                "id": "number3345280329",
-                "max": null,
-                "min": null,
-                "name": "durability",
-                "onlyInt": false,
-                "presentable": false,
-                "required": false,
-                "system": false,
-                "type": "number"
-            },
-            {
-                "hidden": false,
                 "id": "autodate2990389176",
                 "name": "created",
                 "onCreate": true,
@@ -1876,11 +1969,11 @@
     },
     {
         "id": "pbc_2301922722",
-        "listRule": null,
-        "viewRule": null,
+        "listRule": "user.id = @request.auth.id",
+        "viewRule": "user.id = @request.auth.id",
         "createRule": null,
-        "updateRule": null,
-        "deleteRule": null,
+        "updateRule": "user.id = @request.auth.id",
+        "deleteRule": "user.id = @request.auth.id",
         "name": "notifications",
         "type": "base",
         "fields": [
