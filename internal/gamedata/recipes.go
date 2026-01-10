@@ -190,6 +190,191 @@ var Recipes = map[string]Recipe{
 		},
 		Icon: "🛡️",
 	},
+
+	// -------------------------------------------------------------------------
+	// COMPOSANTS INTERMÉDIAIRES RECIPES
+	// -------------------------------------------------------------------------
+	"carbon_fiber_recipe": {
+		ID: "carbon_fiber_recipe", Name: "Fabrication Fibre de Carbone",
+		OutputItem: "carbon_fiber", OutputQuantity: 2, ProductionTime: 180,
+		RequiredTech: "advanced_materials", MachineType: "carbonization_furnace",
+		Inputs: []RecipeIngredient{
+			{ItemID: "plastic", Quantity: 5},
+			{ItemID: "coal", Quantity: 10},
+		},
+		Icon: "🖤",
+	},
+	"ceramic_recipe": {
+		ID: "ceramic_recipe", Name: "Fabrication Céramique Technique",
+		OutputItem: "ceramic", OutputQuantity: 3, ProductionTime: 120,
+		RequiredTech: "advanced_materials", MachineType: "ceramic_kiln",
+		Inputs: []RecipeIngredient{
+			{ItemID: "silica", Quantity: 20},
+			{ItemID: "stone", Quantity: 10},
+		},
+		Icon: "🏺",
+	},
+	"rubber_recipe": {
+		ID: "rubber_recipe", Name: "Synthèse Caoutchouc",
+		OutputItem: "rubber", OutputQuantity: 5, ProductionTime: 90,
+		RequiredTech: "industrial_chemistry", MachineType: "rubber_factory",
+		Inputs: []RecipeIngredient{
+			{ItemID: "crude_oil", Quantity: 5},
+			{ItemID: "plastic", Quantity: 2},
+		},
+		Icon: "⚫",
+	},
+	"sensor_recipe": {
+		ID: "sensor_recipe", Name: "Fabrication Capteur",
+		OutputItem: "sensor", OutputQuantity: 1, ProductionTime: 240,
+		RequiredTech: "precision_engineering", MachineType: "precision_workshop",
+		Inputs: []RecipeIngredient{
+			{ItemID: "simple_circuit", Quantity: 3},
+			{ItemID: "copper_ingot", Quantity: 5},
+			{ItemID: "glass", Quantity: 2},
+		},
+		Icon: "📡",
+	},
+	"hydraulic_cylinder_recipe": {
+		ID: "hydraulic_cylinder_recipe", Name: "Fabrication Vérin Hydraulique",
+		OutputItem: "hydraulic_cylinder", OutputQuantity: 2, ProductionTime: 150,
+		RequiredTech: "precision_engineering", MachineType: "hydraulic_press",
+		Inputs: []RecipeIngredient{
+			{ItemID: "steel", Quantity: 5},
+			{ItemID: "rubber", Quantity: 3},
+			{ItemID: "copper_ingot", Quantity: 2},
+		},
+		Icon: "🔧",
+	},
+	"advanced_alloy_recipe": {
+		ID: "advanced_alloy_recipe", Name: "Fabrication Alliage Avancé",
+		OutputItem: "advanced_alloy", OutputQuantity: 2, ProductionTime: 200,
+		RequiredTech: "advanced_metallurgy", MachineType: "advanced_forge",
+		Inputs: []RecipeIngredient{
+			{ItemID: "steel", Quantity: 5},
+			{ItemID: "iron_ingot", Quantity: 5},
+			{ItemID: "copper_ingot", Quantity: 3},
+		},
+		Icon: "⚙️",
+	},
+	"turbopump_recipe": {
+		ID: "turbopump_recipe", Name: "Fabrication Turbopompe",
+		OutputItem: "turbopump", OutputQuantity: 1, ProductionTime: 360,
+		RequiredTech: "advanced_metallurgy", MachineType: "assembly_line",
+		Inputs: []RecipeIngredient{
+			{ItemID: "advanced_alloy", Quantity: 5},
+			{ItemID: "gear", Quantity: 10},
+			{ItemID: "electric_motor", Quantity: 1},
+		},
+		Icon: "🌀",
+	},
+	"pressurized_tank_recipe": {
+		ID: "pressurized_tank_recipe", Name: "Fabrication Réservoir Pressurisé",
+		OutputItem: "pressurized_tank", OutputQuantity: 1, ProductionTime: 240,
+		RequiredTech: "advanced_metallurgy", MachineType: "advanced_forge",
+		Inputs: []RecipeIngredient{
+			{ItemID: "advanced_alloy", Quantity: 10},
+			{ItemID: "rubber", Quantity: 5},
+		},
+		Icon: "🛢️",
+	},
+
+	// -------------------------------------------------------------------------
+	// AEROSPACE RECIPES
+	// -------------------------------------------------------------------------
+	"aluminum_ingot_recipe": {
+		ID: "aluminum_ingot_recipe", Name: "Fonte de l'Aluminium",
+		OutputItem: "aluminum_ingot", OutputQuantity: 2, ProductionTime: 60,
+		RequiredTech: "aluminum_processing", MachineType: "aluminum_foundry",
+		Inputs: []RecipeIngredient{{ItemID: "aluminum_ore", Quantity: 3}},
+		Icon:   "⚪",
+	},
+	"titanium_ingot_recipe": {
+		ID: "titanium_ingot_recipe", Name: "Fonte du Titane",
+		OutputItem: "titanium_ingot", OutputQuantity: 1, ProductionTime: 180,
+		RequiredTech: "titanium_metallurgy", MachineType: "titanium_foundry",
+		Inputs: []RecipeIngredient{
+			{ItemID: "titanium_ore", Quantity: 5},
+			{ItemID: "coal", Quantity: 10},
+		},
+		Icon: "🧊",
+	},
+	"electrolysis_recipe": {
+		ID: "electrolysis_recipe", Name: "Électrolyse de l'Eau",
+		OutputItem: "hydrogen", OutputQuantity: 10, ProductionTime: 120,
+		RequiredTech: "cryogenics", MachineType: "electrolysis_plant",
+		Inputs: []RecipeIngredient{}, // Generates from energy + water (simplified)
+		Icon:   "💧",
+	},
+	"rocket_fuel_recipe": {
+		ID: "rocket_fuel_recipe", Name: "Synthèse de Carburant Spatial",
+		OutputItem: "rocket_fuel", OutputQuantity: 5, ProductionTime: 300,
+		RequiredTech: "cryogenics", MachineType: "chemical_plant",
+		Inputs: []RecipeIngredient{
+			{ItemID: "hydrogen", Quantity: 20},
+			{ItemID: "crude_oil", Quantity: 10},
+		},
+		Icon: "🚀",
+	},
+	"heat_shield_recipe": {
+		ID: "heat_shield_recipe", Name: "Fabrication Bouclier Thermique",
+		OutputItem: "heat_shield", OutputQuantity: 1, ProductionTime: 600,
+		RequiredTech: "titanium_metallurgy", MachineType: "titanium_foundry",
+		Inputs: []RecipeIngredient{
+			{ItemID: "titanium_ingot", Quantity: 10},
+			{ItemID: "reinforced_steel", Quantity: 5},
+		},
+		Icon: "🛡️",
+	},
+	"guidance_system_recipe": {
+		ID: "guidance_system_recipe", Name: "Système de Guidage Avancé",
+		OutputItem: "guidance_system", OutputQuantity: 1, ProductionTime: 900,
+		RequiredTech: "aerospace_engineering", MachineType: "hightech_factory",
+		Inputs: []RecipeIngredient{
+			{ItemID: "processor", Quantity: 5},
+			{ItemID: "simple_circuit", Quantity: 20},
+			{ItemID: "gold_ore", Quantity: 10},
+		},
+		Icon: "🎯",
+	},
+	"rocket_engine_recipe": {
+		ID: "rocket_engine_recipe", Name: "Construction Moteur de Fusée",
+		OutputItem: "rocket_engine", OutputQuantity: 1, ProductionTime: 1800,
+		RequiredTech: "aerospace_engineering", MachineType: "aerospace_factory",
+		Inputs: []RecipeIngredient{
+			{ItemID: "titanium_ingot", Quantity: 50},
+			{ItemID: "aluminum_ingot", Quantity: 100},
+			{ItemID: "reinforced_steel", Quantity: 30},
+			{ItemID: "electric_motor", Quantity: 5},
+		},
+		Icon: "🔥",
+	},
+	"satellite_recipe": {
+		ID: "satellite_recipe", Name: "Assemblage Satellite",
+		OutputItem: "satellite", OutputQuantity: 1, ProductionTime: 3600,
+		RequiredTech: "aerospace_engineering", MachineType: "aerospace_factory",
+		Inputs: []RecipeIngredient{
+			{ItemID: "aluminum_ingot", Quantity: 50},
+			{ItemID: "processor", Quantity: 10},
+			{ItemID: "guidance_system", Quantity: 2},
+			{ItemID: "battery_cell", Quantity: 20},
+		},
+		Icon: "🛰️",
+	},
+	"rocket_recipe": {
+		ID: "rocket_recipe", Name: "Construction de Fusée",
+		OutputItem: "rocket", OutputQuantity: 1, ProductionTime: 7200,
+		RequiredTech: "rocket_science", MachineType: "rocket_launch_pad",
+		Inputs: []RecipeIngredient{
+			{ItemID: "rocket_engine", Quantity: 5},
+			{ItemID: "heat_shield", Quantity: 20},
+			{ItemID: "guidance_system", Quantity: 3},
+			{ItemID: "rocket_fuel", Quantity: 1000},
+			{ItemID: "titanium_ingot", Quantity: 200},
+			{ItemID: "aluminum_ingot", Quantity: 500},
+		},
+		Icon: "🚀",
+	},
 }
 
 // GetRecipe returns a recipe by ID, returns nil if not found

@@ -41,7 +41,6 @@ type MachineMetadata struct {
 	DurabilityPerCycle    float64    `json:"durability_per_cycle,omitempty"`    // Durability loss per cycle (default 1)
 	ProduceEnergy         float64    `json:"produce_energy,omitempty"`          // For generators: energy produced
 	CanConsume            []string   `json:"can_consume,omitempty"`             // For generators: fuel item IDs
-	StorageCapacity       int        `json:"storage_capacity,omitempty"`        // Max items stored
 	SupportedStorageTypes []Unit     `json:"supported_storage_types,omitempty"` // "kg", "l", "u"
 	CanStoreItems         []string   `json:"can_store_items,omitempty"`         // Specific items it can store (optional filter)
 }
@@ -119,6 +118,22 @@ var Items = map[string]Item{
 		ID: "lithium", Name: "Lithium", Type: ItemTypeRessourceBrute, Unit: UnitKg,
 		BasePrice: 20, Volatility: 0.60, Minable: false, IsExplorable: false, Icon: "🔋",
 	},
+	"titanium_ore": {
+		ID: "titanium_ore", Name: "Minerai de Titane", Type: ItemTypeRessourceBrute, Unit: UnitKg,
+		BasePrice: 200, Volatility: 0.35, Minable: false, IsExplorable: true, Icon: "🧊",
+	},
+	"aluminum_ore": {
+		ID: "aluminum_ore", Name: "Bauxite (Minerai d'Aluminium)", Type: ItemTypeRessourceBrute, Unit: UnitKg,
+		BasePrice: 25, Volatility: 0.20, Minable: false, IsExplorable: true, MarketAvailable: true, Icon: "⚪",
+	},
+	"hydrogen": {
+		ID: "hydrogen", Name: "Hydrogène Liquide", Type: ItemTypeRessourceBrute, Unit: UnitL,
+		BasePrice: 150, Volatility: 0.40, Minable: false, IsExplorable: false, Icon: "💧",
+	},
+	"oxygen": {
+		ID: "oxygen", Name: "Oxygène Liquide", Type: ItemTypeRessourceBrute, Unit: UnitL,
+		BasePrice: 50, Volatility: 0.25, Minable: false, IsExplorable: false, Icon: "🌬️",
+	},
 
 	// -------------------------------------------------------------------------
 	// COMPOSANTS - Matériaux transformés
@@ -169,6 +184,50 @@ var Items = map[string]Item{
 	},
 
 	// -------------------------------------------------------------------------
+	// COMPOSANTS INTERMÉDIAIRES (Tier 4-5)
+	// -------------------------------------------------------------------------
+	"carbon_fiber": {
+		ID: "carbon_fiber", Name: "Fibre de Carbone", Type: ItemTypeComposant, Unit: UnitUnit,
+		BasePrice: 200, Volatility: 0.30, Icon: "🖤",
+	},
+	"ceramic": {
+		ID: "ceramic", Name: "Céramique Technique", Type: ItemTypeComposant, Unit: UnitUnit,
+		BasePrice: 150, Volatility: 0.20, Icon: "🏺",
+	},
+	"advanced_alloy": {
+		ID: "advanced_alloy", Name: "Alliage Avancé", Type: ItemTypeComposant, Unit: UnitUnit,
+		BasePrice: 300, Volatility: 0.25, Icon: "⚙️",
+	},
+	"sensor": {
+		ID: "sensor", Name: "Capteur Électronique", Type: ItemTypeComposant, Unit: UnitUnit,
+		BasePrice: 800, Volatility: 0.35, Icon: "📡",
+	},
+	"rubber": {
+		ID: "rubber", Name: "Caoutchouc Synthétique", Type: ItemTypeComposant, Unit: UnitUnit,
+		BasePrice: 100, Volatility: 0.25, Icon: "⚫",
+	},
+	"hydraulic_cylinder": {
+		ID: "hydraulic_cylinder", Name: "Vérin Hydraulique", Type: ItemTypeComposant, Unit: UnitUnit,
+		BasePrice: 1200, Volatility: 0.20, Icon: "🔧",
+	},
+	"turbopump": {
+		ID: "turbopump", Name: "Turbopompe", Type: ItemTypeComposant, Unit: UnitUnit,
+		BasePrice: 8000, Volatility: 0.35, Icon: "🌀",
+	},
+	"pressurized_tank": {
+		ID: "pressurized_tank", Name: "Réservoir Pressurisé", Type: ItemTypeComposant, Unit: UnitUnit,
+		BasePrice: 3000, Volatility: 0.25, Icon: "🛢️",
+	},
+	"nitrogen": {
+		ID: "nitrogen", Name: "Azote Liquide", Type: ItemTypeRessourceBrute, Unit: UnitL,
+		BasePrice: 30, Volatility: 0.15, Minable: false, IsExplorable: false, Icon: "❄️",
+	},
+	"sulfuric_acid": {
+		ID: "sulfuric_acid", Name: "Acide Sulfurique", Type: ItemTypeComposant, Unit: UnitL,
+		BasePrice: 80, Volatility: 0.20, Icon: "⚗️",
+	},
+
+	// -------------------------------------------------------------------------
 	// PRODUITS FINIS
 	// -------------------------------------------------------------------------
 	"electric_motor": {
@@ -183,6 +242,39 @@ var Items = map[string]Item{
 		ID: "computer", Name: "Ordinateur", Type: ItemTypeProduitFini, Unit: UnitUnit,
 		BasePrice: 12000, Volatility: 0.40, Icon: "🖥️",
 	},
+	// Aerospace Components
+	"titanium_ingot": {
+		ID: "titanium_ingot", Name: "Lingot de Titane", Type: ItemTypeComposant, Unit: UnitUnit,
+		BasePrice: 400, Volatility: 0.30, Icon: "🧊",
+	},
+	"aluminum_ingot": {
+		ID: "aluminum_ingot", Name: "Lingot d'Aluminium", Type: ItemTypeComposant, Unit: UnitUnit,
+		BasePrice: 50, Volatility: 0.18, Icon: "⚪",
+	},
+	"rocket_fuel": {
+		ID: "rocket_fuel", Name: "Carburant de Fusée (LOX/LH2)", Type: ItemTypeComposant, Unit: UnitL,
+		BasePrice: 500, Volatility: 0.50, Icon: "🚀",
+	},
+	"heat_shield": {
+		ID: "heat_shield", Name: "Bouclier Thermique", Type: ItemTypeComposant, Unit: UnitUnit,
+		BasePrice: 5000, Volatility: 0.25, Icon: "🛡️",
+	},
+	"guidance_system": {
+		ID: "guidance_system", Name: "Système de Guidage", Type: ItemTypeComposant, Unit: UnitUnit,
+		BasePrice: 25000, Volatility: 0.40, Icon: "🎯",
+	},
+	"rocket_engine": {
+		ID: "rocket_engine", Name: "Moteur de Fusée", Type: ItemTypeProduitFini, Unit: UnitUnit,
+		BasePrice: 100000, Volatility: 0.35, Icon: "🔥",
+	},
+	"satellite": {
+		ID: "satellite", Name: "Satellite", Type: ItemTypeProduitFini, Unit: UnitUnit,
+		BasePrice: 500000, Volatility: 0.45, Icon: "🛠️",
+	},
+	"rocket": {
+		ID: "rocket", Name: "Fusée", Type: ItemTypeProduitFini, Unit: UnitUnit,
+		BasePrice: 5000000, Volatility: 0.60, Icon: "🚀",
+	},
 
 	// -------------------------------------------------------------------------
 	// MACHINES - Tier 1 (Niveau 1+)
@@ -195,7 +287,7 @@ var Items = map[string]Item{
 	},
 	"basic_mining_machine": {
 		ID: "basic_mining_machine", Name: "Extraction Minière de base", Type: ItemTypeMachine, Unit: UnitUnit,
-		BasePrice: 2500, Product: "iron_ore", ProductQuantity: 15, ProductionTime: 120,
+		BasePrice: 2500, Product: "stone", ProductQuantity: 15, ProductionTime: 120,
 		MaxEmployee: 2, EnergyType: EnergyTypeManuel, Icon: "/icons/basic_mining_machine.png",
 		MarketAvailable: true,
 	},
@@ -204,10 +296,6 @@ var Items = map[string]Item{
 		BasePrice: 1500, UseRecipe: "wooden_plank_recipe", ProductionTime: 20,
 		MaxEmployee: 2, EnergyType: EnergyTypeManuel, Icon: "/icons/sawmill.png",
 		MarketAvailable: true,
-	},
-	"solar_panel": {
-		ID: "solar_panel", Name: "Panneau Solaire", Type: ItemTypeMachine, Unit: UnitUnit,
-		BasePrice: 2500, EnergyType: EnergyTypeManuel, Icon: "/icons/solar_panel.png",
 	},
 	"charcoal_mine": {
 		ID: "charcoal_mine", Name: "Mine de Charbon", Type: ItemTypeMachine, Unit: UnitUnit,
@@ -220,12 +308,6 @@ var Items = map[string]Item{
 		ID: "sand_extractor", Name: "Extracteur de Sable", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 1500, Product: "silica", ProductQuantity: 20, ProductionTime: 120,
 		MaxEmployee: 2, EnergyType: EnergyTypeManuel, Icon: "/icons/sand_extractor.png",
-		MarketAvailable: true,
-	},
-	"quarry": {
-		ID: "quarry", Name: "Carrière", Type: ItemTypeMachine, Unit: UnitUnit,
-		BasePrice: 2000, Product: "stone", ProductQuantity: 20, ProductionTime: 120,
-		MaxEmployee: 2, EnergyType: EnergyTypeManuel, Icon: "/icons/quarry.png",
 		MarketAvailable: true,
 	},
 
@@ -268,11 +350,6 @@ var Items = map[string]Item{
 	// -------------------------------------------------------------------------
 	// MACHINES - Tier 3 (Niveau 6+)
 	// -------------------------------------------------------------------------
-	"thermal_plant": {
-		ID: "thermal_plant", Name: "Central Thermique", Type: ItemTypeMachine, Unit: UnitUnit,
-		BasePrice: 20000, EnergyType: EnergyTypeManuel, MaxEmployee: 4, Icon: "🔥",
-		MarketAvailable: true,
-	},
 	"glass_furnace": {
 		ID: "glass_furnace", Name: "Four à Verre", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 8500, UseRecipe: "glass_recipe", ProductionTime: 60,
@@ -338,26 +415,93 @@ var Items = map[string]Item{
 		BasePrice: 250000, UseRecipe: "smartphone_recipe", ProductionTime: 600,
 		MaxEmployee: 12, NeedEnergy: 200, EnergyType: EnergyTypeManuel, Icon: "🏢",
 	},
-	"wind_turbine": {
-		ID: "wind_turbine", Name: "Éolienne (Production de 4 MW)", Type: ItemTypeMachine, Unit: UnitUnit,
-		BasePrice: 250000, ProduceEnergy: 4, EnergyType: EnergyTypeManuel, Icon: "/icons/wind_turbine.png",
+
+	// -------------------------------------------------------------------------
+	// MACHINES - Tier 5.5 Intermédiaire (Niveau 18-22)
+	// -------------------------------------------------------------------------
+	"carbonization_furnace": {
+		ID: "carbonization_furnace", Name: "Four de Carbonisation", Type: ItemTypeMachine, Unit: UnitUnit,
+		BasePrice: 120000, UseRecipe: "carbon_fiber_recipe", ProductionTime: 180,
+		MaxEmployee: 4, NeedEnergy: 80, EnergyType: EnergyTypeManuel, Icon: "🖤",
+	},
+	"ceramic_kiln": {
+		ID: "ceramic_kiln", Name: "Four à Céramique", Type: ItemTypeMachine, Unit: UnitUnit,
+		BasePrice: 80000, UseRecipe: "ceramic_recipe", ProductionTime: 120,
+		MaxEmployee: 3, NeedEnergy: 60, EnergyType: EnergyTypeManuel, Icon: "🏺",
+	},
+	"precision_workshop": {
+		ID: "precision_workshop", Name: "Atelier de Précision", Type: ItemTypeMachine, Unit: UnitUnit,
+		BasePrice: 200000, UseRecipe: "sensor_recipe", ProductionTime: 240,
+		MaxEmployee: 6, NeedEnergy: 100, EnergyType: EnergyTypeManuel, Icon: "🔬",
+	},
+	"rubber_factory": {
+		ID: "rubber_factory", Name: "Usine de Caoutchouc", Type: ItemTypeMachine, Unit: UnitUnit,
+		BasePrice: 90000, UseRecipe: "rubber_recipe", ProductionTime: 90,
+		MaxEmployee: 4, NeedEnergy: 50, EnergyType: EnergyTypeManuel, Icon: "⚫", MarketAvailable: true,
+	},
+	"hydraulic_press": {
+		ID: "hydraulic_press", Name: "Presse Hydraulique", Type: ItemTypeMachine, Unit: UnitUnit,
+		BasePrice: 150000, UseRecipe: "hydraulic_cylinder_recipe", ProductionTime: 150,
+		MaxEmployee: 4, NeedEnergy: 80, EnergyType: EnergyTypeManuel, Icon: "🔧",
+	},
+	"advanced_forge": {
+		ID: "advanced_forge", Name: "Forge Avancée", Type: ItemTypeMachine, Unit: UnitUnit,
+		BasePrice: 250000, UseRecipe: "advanced_alloy_recipe", ProductionTime: 200,
+		MaxEmployee: 5, NeedEnergy: 120, EnergyType: EnergyTypeManuel, Icon: "🔥",
+	},
+
+	// -------------------------------------------------------------------------
+	// MACHINES - Tier 6 Aerospace (Niveau 25+)
+	// -------------------------------------------------------------------------
+	"chemical_plant": {
+		ID: "chemical_plant", Name: "Usine Chimique", Type: ItemTypeMachine, Unit: UnitUnit,
+		BasePrice: 500000, UseRecipe: "rocket_fuel_recipe", ProductionTime: 300,
+		MaxEmployee: 6, NeedEnergy: 150, EnergyType: EnergyTypeManuel, Icon: "⚗️",
+	},
+	"titanium_foundry": {
+		ID: "titanium_foundry", Name: "Fonderie de Titane", Type: ItemTypeMachine, Unit: UnitUnit,
+		BasePrice: 350000, UseRecipe: "titanium_ingot_recipe", ProductionTime: 180,
+		MaxEmployee: 4, NeedEnergy: 100, EnergyType: EnergyTypeManuel, Icon: "🔥",
+	},
+	"aluminum_foundry": {
+		ID: "aluminum_foundry", Name: "Fonderie d'Aluminium", Type: ItemTypeMachine, Unit: UnitUnit,
+		BasePrice: 150000, UseRecipe: "aluminum_ingot_recipe", ProductionTime: 60,
+		MaxEmployee: 3, EnergyType: EnergyTypeManuel, Icon: "🔥", MarketAvailable: true,
+	},
+	"titanium_mine": {
+		ID: "titanium_mine", Name: "Mine de Titane", Type: ItemTypeMachine, Unit: UnitUnit,
+		BasePrice: 400000, Product: "titanium_ore", ProductQuantity: 5, ProductionTime: 300,
+		MaxEmployee: 5, EnergyType: EnergyTypeManuel, Icon: "⛏️",
+	},
+	"electrolysis_plant": {
+		ID: "electrolysis_plant", Name: "Station d'Électrolyse", Type: ItemTypeMachine, Unit: UnitUnit,
+		BasePrice: 300000, UseRecipe: "electrolysis_recipe", ProductionTime: 120,
+		MaxEmployee: 4, NeedEnergy: 200, EnergyType: EnergyTypeManuel, Icon: "⚡",
+	},
+	"aerospace_factory": {
+		ID: "aerospace_factory", Name: "Usine Aérospatiale", Type: ItemTypeMachine, Unit: UnitUnit,
+		BasePrice: 2000000, UseRecipe: "rocket_engine_recipe", ProductionTime: 1800,
+		MaxEmployee: 20, NeedEnergy: 500, EnergyType: EnergyTypeManuel, Icon: "🏭",
+	},
+	"rocket_launch_pad": {
+		ID: "rocket_launch_pad", Name: "Pas de Tir", Type: ItemTypeMachine, Unit: UnitUnit,
+		BasePrice: 50000000, UseRecipe: "rocket_recipe", ProductionTime: 7200,
+		MaxEmployee: 50, NeedEnergy: 1000, EnergyType: EnergyTypeManuel, Icon: "🚀",
 	},
 	// -------------------------------------------------------------------------
 	// STOCKAGE
 	// -------------------------------------------------------------------------
 	"warehouse_small": {
 		ID: "warehouse_small", Name: "Petit Entrepôt", Type: ItemTypeStockage, Unit: UnitUnit,
-		BasePrice: 5000, Icon: "📦",
+		BasePrice: 5000, Icon: "📦", MarketAvailable: true,
 		Metadata: &MachineMetadata{
-			StorageCapacity:       1000,
 			SupportedStorageTypes: []Unit{UnitKg, UnitUnit},
 		},
 	},
 	"fluid_tank_small": {
 		ID: "fluid_tank_small", Name: "Citerne Standard", Type: ItemTypeStockage, Unit: UnitUnit,
-		BasePrice: 7500, Icon: "🛢️",
+		BasePrice: 7500, Icon: "🛢️", MarketAvailable: true,
 		Metadata: &MachineMetadata{
-			StorageCapacity:       1000,
 			SupportedStorageTypes: []Unit{UnitL},
 		},
 	},

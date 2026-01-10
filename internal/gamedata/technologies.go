@@ -32,16 +32,10 @@ var Technologies = map[string]Technology{
 	"basic_automation": {
 		ID: "basic_automation", Name: "Un début d'automatisation", Category: "general",
 		Description: "Débloquer les premières machines pour automatiser la production.",
-		Cost:        1000, RequiredLevel: 1,
+		Cost:        5000, RequiredLevel: 1,
+		UnlockTime:   300, // 5 minutes
 		ItemUnlocked: []string{"forestry_machine", "basic_mining_machine", "sawmill", "wooden_plank", "sand_extractor", "quarry"},
 		Icon:         "⚙️",
-	},
-	"solar_power": {
-		ID: "solar_power", Name: "Énergie Solaire", Category: "general",
-		Description: "Exploiter l'énergie du soleil pour alimenter vos machines.",
-		Cost:        2500, RequiredLevel: 1,
-		ItemUnlocked: []string{"solar_panel"},
-		Icon:         "☀️",
 	},
 
 	// -------------------------------------------------------------------------
@@ -50,7 +44,8 @@ var Technologies = map[string]Technology{
 	"basic_metallurgy": {
 		ID: "basic_metallurgy", Name: "Métallurgie Fondamentale", Category: "resource",
 		Description: "Transformer les minerais en lingots utilisables.",
-		Cost:        20000, RequiredLevel: 2,
+		Cost:        75000, RequiredLevel: 2,
+		UnlockTime:    600, // 10 minutes
 		Prerequisites: []string{"basic_automation"},
 		ItemUnlocked:  []string{"iron_foundry", "copper_foundry", "iron_ingot", "copper_ingot", "iron_extractor", "copper_extractor"},
 		Icon:          "🔥",
@@ -58,19 +53,21 @@ var Technologies = map[string]Technology{
 	"advanced_mining": {
 		ID: "advanced_mining", Name: "Extraction Avancée", Category: "resource",
 		Description: "Techniques d'extraction pour des minerais plus profonds.",
-		Cost:        35000, RequiredLevel: 3,
+		Cost:        120000, RequiredLevel: 3,
+		UnlockTime:    900, // 15 minutes
 		Prerequisites: []string{"basic_metallurgy"},
 		ItemUnlocked:  []string{"iron_ore", "copper_ore", "coal"},
 		Icon:          "⛏️",
 	},
 
 	// -------------------------------------------------------------------------
-	// TIER 3 - Industrie (Niveau 6)
+	// TIER 3 - Industrie (Niveau 5-7)
 	// -------------------------------------------------------------------------
 	"thermal_power": {
 		ID: "thermal_power", Name: "L'Éveil de la Dynamo", Category: "industry",
 		Description: "Produire de l'électricité à partir du charbon.",
-		Cost:        100000, RequiredLevel: 6,
+		Cost:        350000, RequiredLevel: 6,
+		UnlockTime:    1800, // 30 minutes
 		Prerequisites: []string{"advanced_mining"},
 		ItemUnlocked:  []string{"thermal_plant"},
 		Icon:          "🔥",
@@ -78,7 +75,8 @@ var Technologies = map[string]Technology{
 	"glass_production": {
 		ID: "glass_production", Name: "Verrerie Industrielle", Category: "industry",
 		Description: "Transformer la silice en verre.",
-		Cost:        75000, RequiredLevel: 5,
+		Cost:        250000, RequiredLevel: 5,
+		UnlockTime:    1200, // 20 minutes
 		Prerequisites: []string{"basic_metallurgy"},
 		ItemUnlocked:  []string{"glass_furnace", "glass"},
 		Icon:          "🪟",
@@ -86,7 +84,8 @@ var Technologies = map[string]Technology{
 	"gold_mining": {
 		ID: "gold_mining", Name: "Extraction Aurifère", Category: "resource",
 		Description: "Techniques d'extraction spécialisées pour les gisements d'or.",
-		Cost:        50000, RequiredLevel: 5,
+		Cost:        200000, RequiredLevel: 5,
+		UnlockTime:    1200, // 20 minutes
 		Prerequisites: []string{"basic_metallurgy"},
 		ItemUnlocked:  []string{"gold_mine"},
 		Icon:          "💎",
@@ -94,7 +93,8 @@ var Technologies = map[string]Technology{
 	"steel_production": {
 		ID: "steel_production", Name: "Forge d'Acier", Category: "industry",
 		Description: "Produire de l'acier à partir de lingots de fer.",
-		Cost:        150000, RequiredLevel: 7,
+		Cost:        500000, RequiredLevel: 7,
+		UnlockTime:    2700, // 45 minutes
 		Prerequisites: []string{"thermal_power"},
 		ItemUnlocked:  []string{"steel_press", "steel", "gear"},
 		Icon:          "⚙️",
@@ -102,7 +102,8 @@ var Technologies = map[string]Technology{
 	"first_automatisation": {
 		ID: "first_automatisation", Name: "Un début d'automatisation.", Category: "industry",
 		Description: "Un début d'automatisation.",
-		Cost:        1000000, RequiredLevel: 10,
+		Cost:        3000000, RequiredLevel: 10,
+		UnlockTime:    3600, // 1 heure
 		Prerequisites: []string{"steel_production"},
 		ItemUnlocked:  []string{"assembly_line", "electric_motor", "lithium", "battery_cell"},
 		Icon:          "🏭",
@@ -114,7 +115,8 @@ var Technologies = map[string]Technology{
 	"plastic_era": {
 		ID: "plastic_era", Name: "Ère du Plastique", Category: "industry",
 		Description: "Raffiner le pétrole en plastique, matériau révolutionnaire.",
-		Cost:        1000000, RequiredLevel: 10,
+		Cost:        3500000, RequiredLevel: 10,
+		UnlockTime:    3600, // 1 heure
 		Prerequisites: []string{"steel_production"},
 		ItemUnlocked:  []string{"oil_refinery", "plastic", "crude_oil", "electric_cable", "petrol_pumpjack"},
 		Icon:          "🛢️",
@@ -122,7 +124,8 @@ var Technologies = map[string]Technology{
 	"lithium_extraction": {
 		ID: "lithium_extraction", Name: "Extraction du Lithium", Category: "resource",
 		Description: "Extraire le lithium, composant essentiel des batteries modernes.",
-		Cost:        100000, RequiredLevel: 10,
+		Cost:        500000, RequiredLevel: 10,
+		UnlockTime:    2700, // 45 minutes
 		Prerequisites: []string{"plastic_era"},
 		ItemUnlocked:  []string{"lithium_extractor"},
 		Icon:          "🔋",
@@ -134,8 +137,8 @@ var Technologies = map[string]Technology{
 	"oil_platform_tech": {
 		ID: "oil_platform_tech", Name: "Plateforme Pétrolière Offshore", Category: "industry",
 		Description: "Construire une immense plateforme pour extraire le pétrole en haute mer. Nécessite 100 pompes à pétrole.",
-		Cost:        500000, RequiredLevel: 12,
-		UnlockTime:    36000, // 10 heure
+		Cost:        2000000, RequiredLevel: 12,
+		UnlockTime:    43200, // 12 heures
 		Prerequisites: []string{"plastic_era"},
 		RequiredItems: []RequiredItem{{ItemID: "petrol_pumpjack", Quantity: 100}},
 		ItemUnlocked:  []string{"oil_platform"},
@@ -144,8 +147,8 @@ var Technologies = map[string]Technology{
 	"advanced_steel_tech": {
 		ID: "advanced_steel_tech", Name: "Acier Renforcé", Category: "industry",
 		Description: "Développer un acier de haute qualité pour les constructions avancées. Nécessite 50 aciers.",
-		Cost:        250000, RequiredLevel: 10,
-		UnlockTime:    1800, // 30 minutes
+		Cost:        800000, RequiredLevel: 10,
+		UnlockTime:    5400, // 1h30
 		Prerequisites: []string{"steel_production"},
 		RequiredItems: []RequiredItem{{ItemID: "steel", Quantity: 50}},
 		ItemUnlocked:  []string{"reinforced_steel"},
@@ -156,21 +159,23 @@ var Technologies = map[string]Technology{
 	// TIER 5 - Assemblage (Niveau 15)
 	// -------------------------------------------------------------------------
 	"assembly_line_tech": {
-		ID: "assembly_line_tech", Name: "Ligne d'assemble de premier Niveau.", Category: "industry",
+		ID: "assembly_line_tech", Name: "Ligne d'assemblage de premier Niveau.", Category: "industry",
 		Description: "Assembler des composants complexes en produits finis.",
-		Cost:        10000000, RequiredLevel: 15,
+		Cost:        25000000, RequiredLevel: 15,
+		UnlockTime:    7200, // 2 heures
 		Prerequisites: []string{"plastic_era"},
 		ItemUnlocked:  []string{"assembly_line", "electric_motor", "lithium", "battery_cell"},
 		Icon:          "🏭",
 	},
 
 	// -------------------------------------------------------------------------
-	// TIER 6 - High-Tech (Niveau 20)
+	// TIER 6 - High-Tech (Niveau 18-20)
 	// -------------------------------------------------------------------------
 	"electronics": {
 		ID: "electronics", Name: "Électronique Avancée", Category: "tech",
 		Description: "Fabriquer des circuits et processeurs.",
-		Cost:        8000000, RequiredLevel: 18,
+		Cost:        20000000, RequiredLevel: 18,
+		UnlockTime:    10800, // 3 heures
 		Prerequisites: []string{"assembly_line_tech"},
 		ItemUnlocked:  []string{"simple_circuit", "processor"},
 		Icon:          "🔲",
@@ -178,18 +183,104 @@ var Technologies = map[string]Technology{
 	"hightech_manufacturing": {
 		ID: "hightech_manufacturing", Name: "Manufacture High-Tech", Category: "tech",
 		Description: "Produire des appareils électroniques avancés.",
-		Cost:        15000000, RequiredLevel: 20,
+		Cost:        50000000, RequiredLevel: 20,
+		UnlockTime:    14400, // 4 heures
 		Prerequisites: []string{"electronics"},
 		ItemUnlocked:  []string{"hightech_factory", "smartphone", "computer"},
 		Icon:          "📱",
 	},
-	"green_energy": {
-		ID: "green_energy", Name: "Transition Industrielle (Énergie Verte)", Category: "tech",
-		Description: "Sources d'énergie renouvelables avancées.",
-		Cost:        15000000, RequiredLevel: 20,
+
+	// -------------------------------------------------------------------------
+	// TIER 6.5 - Technologies Intermédiaires (Niveau 18-22)
+	// -------------------------------------------------------------------------
+	"advanced_materials": {
+		ID: "advanced_materials", Name: "Matériaux Avancés", Category: "industry",
+		Description: "Développer des matériaux composites et céramiques haute performance.",
+		Cost:        25000000, RequiredLevel: 18,
+		UnlockTime:    10800, // 3 heures
 		Prerequisites: []string{"electronics"},
-		ItemUnlocked:  []string{}, // Future: wind turbines, advanced solar
-		Icon:          "🌱",
+		ItemUnlocked:  []string{"carbon_fiber", "ceramic", "carbonization_furnace", "ceramic_kiln"},
+		Icon:          "🖤",
+	},
+	"precision_engineering": {
+		ID: "precision_engineering", Name: "Ingénierie de Précision", Category: "tech",
+		Description: "Techniques de fabrication de haute précision pour l'instrumentation.",
+		Cost:        40000000, RequiredLevel: 19,
+		UnlockTime:    14400, // 4 heures
+		Prerequisites: []string{"advanced_materials"},
+		ItemUnlocked:  []string{"sensor", "precision_workshop", "hydraulic_cylinder", "hydraulic_press"},
+		Icon:          "🔬",
+	},
+	"industrial_chemistry": {
+		ID: "industrial_chemistry", Name: "Chimie Industrielle", Category: "industry",
+		Description: "Processus chimiques avancés pour les synthèses industrielles.",
+		Cost:        35000000, RequiredLevel: 20,
+		UnlockTime:    18000, // 5 heures
+		Prerequisites: []string{"precision_engineering"},
+		ItemUnlocked:  []string{"rubber", "rubber_factory", "sulfuric_acid", "nitrogen"},
+		Icon:          "⚗️",
+	},
+	"advanced_metallurgy": {
+		ID: "advanced_metallurgy", Name: "Métallurgie Avancée", Category: "industry",
+		Description: "Alliages spéciaux pour applications critiques.",
+		Cost:        50000000, RequiredLevel: 21,
+		UnlockTime:    21600, // 6 heures
+		Prerequisites: []string{"industrial_chemistry"},
+		ItemUnlocked:  []string{"advanced_alloy", "advanced_forge", "turbopump", "pressurized_tank"},
+		Icon:          "⚙️",
+	},
+
+	// -------------------------------------------------------------------------
+	// TIER 7 - Aerospace (Niveau 22-28)
+	// -------------------------------------------------------------------------
+	"aluminum_processing": {
+		ID: "aluminum_processing", Name: "Traitement de l'Aluminium", Category: "resource",
+		Description: "Extraire et raffiner l'aluminium à partir de la bauxite.",
+		Cost:        20000000, RequiredLevel: 22,
+		UnlockTime:    25200, // 7 heures
+		Prerequisites: []string{"advanced_metallurgy"},
+		ItemUnlocked:  []string{"aluminum_ore", "aluminum_ingot", "aluminum_foundry"},
+		Icon:          "⚪",
+	},
+	"titanium_metallurgy": {
+		ID: "titanium_metallurgy", Name: "Métallurgie du Titane", Category: "resource",
+		Description: "Techniques avancées pour travailler le titane, métal essentiel pour l'aérospatiale.",
+		Cost:        80000000, RequiredLevel: 25,
+		UnlockTime:    36000, // 10 heures
+		Prerequisites: []string{"aluminum_processing"},
+		ItemUnlocked:  []string{"titanium_ore", "titanium_ingot", "titanium_foundry", "titanium_mine", "heat_shield"},
+		Icon:          "🧊",
+	},
+	"cryogenics": {
+		ID: "cryogenics", Name: "Cryogénie Industrielle", Category: "industry",
+		Description: "Maîtriser les techniques de liquéfaction des gaz pour produire du carburant spatial.",
+		Cost:        100000000, RequiredLevel: 26,
+		UnlockTime:    43200, // 12 heures
+		Prerequisites: []string{"titanium_metallurgy"},
+		ItemUnlocked:  []string{"hydrogen", "oxygen", "electrolysis_plant", "chemical_plant", "rocket_fuel"},
+		Icon:          "❄️",
+	},
+	"aerospace_engineering": {
+		ID: "aerospace_engineering", Name: "Ingénierie Aérospatiale", Category: "tech",
+		Description: "Concevoir et construire des systèmes spatiaux avancés.",
+		Cost:        200000000, RequiredLevel: 28,
+		UnlockTime:    64800, // 18 heures
+		Prerequisites: []string{"cryogenics"},
+		ItemUnlocked:  []string{"guidance_system", "rocket_engine", "aerospace_factory", "satellite"},
+		Icon:          "🛰️",
+	},
+	"rocket_science": {
+		ID: "rocket_science", Name: "Science des Fusées", Category: "tech",
+		Description: "L'aboutissement de toute la recherche : construire et lancer des fusées !",
+		Cost:        500000000, RequiredLevel: 30,
+		UnlockTime:    172800, // 48 heures
+		Prerequisites: []string{"aerospace_engineering"},
+		RequiredItems: []RequiredItem{
+			{ItemID: "rocket_engine", Quantity: 10},
+			{ItemID: "satellite", Quantity: 5},
+		},
+		ItemUnlocked: []string{"rocket", "rocket_launch_pad"},
+		Icon:         "🚀",
 	},
 }
 
