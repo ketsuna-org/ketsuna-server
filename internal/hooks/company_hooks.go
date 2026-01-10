@@ -29,6 +29,34 @@ func registerCompanyHooks(app *pocketbase.PocketBase) {
 		return e.Next()
 	})
 
+	// On update: protect sensitive fields from user modification
+	app.OnRecordUpdateRequest("companies").BindFunc(func(e *core.RecordRequestEvent) error {
+		// Allow admins to modify anything
+		if e.HasSuperuserAuth() {
+			return e.Next()
+		}
+
+		// Get the original record from database
+		original, err := e.App.FindRecordById("companies", e.Record.Id)
+		if err != nil {
+			return apis.NewBadRequestError("Entreprise introuvable", nil)
+		}
+
+		// Check ownership - only CEO can update
+		if e.Auth == nil || original.GetString("ceo") != e.Auth.Id {
+			return apis.NewForbiddenError("Vous n'êtes pas autorisé à modifier cette entreprise", nil)
+		}
+
+		// Protected fields that users cannot modify - restore original values
+		protectedFields := []string{"balance", "level", "ceo", "is_npc"}
+		for _, field := range protectedFields {
+			e.Record.Set(field, original.Get(field))
+		}
+
+		// Allow modification of: name, location, and other non-sensitive fields
+		return e.Next()
+	})
+
 	// Prevent deletion when related records exist
 	app.OnRecordDeleteRequest("companies").BindFunc(func(e *core.RecordRequestEvent) error {
 		company := e.Record
