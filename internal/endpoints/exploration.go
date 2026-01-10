@@ -54,10 +54,6 @@ func registerExplorationEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent
 				}
 			}
 
-			// 3. Check Eligibility (Must be Explorateur and Idle)
-			if employee.GetString("poste") != "Explorateur" {
-				return apis.NewBadRequestError("Seul un Explorateur peut partir en mission", nil)
-			}
 			if employee.GetString("deposit") != "" || employee.GetString("exploration") != "" {
 				return apis.NewBadRequestError("Cet employé est déjà occupé", nil)
 			}
