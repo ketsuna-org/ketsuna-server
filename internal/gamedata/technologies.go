@@ -63,15 +63,6 @@ var Technologies = map[string]Technology{
 	// -------------------------------------------------------------------------
 	// TIER 3 - Industrie (Niveau 5-7)
 	// -------------------------------------------------------------------------
-	"thermal_power": {
-		ID: "thermal_power", Name: "L'Éveil de la Dynamo", Category: "industry",
-		Description: "Produire de l'électricité à partir du charbon.",
-		Cost:        350000, RequiredLevel: 6,
-		UnlockTime:    1800, // 30 minutes
-		Prerequisites: []string{"advanced_mining"},
-		ItemUnlocked:  []string{"thermal_plant"},
-		Icon:          "🔥",
-	},
 	"glass_production": {
 		ID: "glass_production", Name: "Verrerie Industrielle", Category: "industry",
 		Description: "Transformer la silice en verre.",
@@ -95,7 +86,7 @@ var Technologies = map[string]Technology{
 		Description: "Produire de l'acier à partir de lingots de fer.",
 		Cost:        500000, RequiredLevel: 7,
 		UnlockTime:    2700, // 45 minutes
-		Prerequisites: []string{"thermal_power"},
+		Prerequisites: []string{"advanced_mining"},
 		ItemUnlocked:  []string{"steel_press", "steel", "gear"},
 		Icon:          "⚙️",
 	},
