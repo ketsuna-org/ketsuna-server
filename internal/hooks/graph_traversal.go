@@ -81,7 +81,8 @@ func (gt *GraphTraversal) TraverseGlobal(companyId string) (map[string]float64, 
 				totalFlow[flow.ItemID] += flow.Quantity
 
 				// CONSUME from the source (storage) - transfer to company
-				if inputType == "storage" {
+				switch inputType {
+case "storage":
 					// Find storage's linked inventory and deduct
 					invRecords, err := gt.app.FindRecordsByFilter("inventory", fmt.Sprintf("linked_storage = '%s' && item_id = '%s'", inputId, flow.ItemID), "", 1, 0)
 					if err == nil && len(invRecords) > 0 {
@@ -95,7 +96,7 @@ func (gt *GraphTraversal) TraverseGlobal(companyId string) (map[string]float64, 
 						gt.app.Save(inv)
 						gt.app.Logger().Info("[GRAPH] Company consumed from storage", "storage", inputId, "item", flow.ItemID, "consumed", flow.Quantity, "remaining", newQty)
 					}
-				} else if inputType == "machine" {
+				case "machine":
 					// Consume from machine buffer
 					gt.consumeFromBuffer(inputId, inputType, flow.Quantity)
 				}
@@ -866,17 +867,6 @@ func (gt *GraphTraversal) getMachineBuffer(machineId string) *core.Record {
 		return records[0]
 	}
 	return nil
-}
-
-// cleanupOrphanedEdge removes an edge record if it points to a missing node
-func (gt *GraphTraversal) cleanupOrphanedEdge(edgeId string) {
-	edge, err := gt.app.FindRecordById("edge_relation", edgeId)
-	if err == nil {
-		gt.app.Logger().Warn("[GRAPH] Cleaning up orphaned edge", "edgeId", edgeId)
-		if err := gt.app.Delete(edge); err != nil {
-			gt.app.Logger().Error("[GRAPH] Failed to delete orphaned edge", "edgeId", edgeId, "err", err)
-		}
-	}
 }
 
 // consumeFromBuffer removes quantity from a node's buffer

@@ -40,6 +40,7 @@ func RegisterEdgeRelationHooks(app *pocketbase.PocketBase) {
 		inputType := e.Record.GetString("input_type")
 		outputType := e.Record.GetString("output_type")
 		outputId := e.Record.GetString("output_id")
+		inputId := e.Record.GetString("input_id")
 
 		// Constraint: Machine can only have ONE deposit input
 		if inputType == "deposit" && outputType == "machine" {
@@ -52,7 +53,27 @@ func RegisterEdgeRelationHooks(app *pocketbase.PocketBase) {
 			}
 
 			if len(existing) > 0 {
-				return fmt.Errorf("constraint violation: machine %s already has a deposit connected", outputId)
+				// Auto-replace behavior: Delete the existing edge(s)
+				e.App.Logger().Info("[EDGE_HOOK] Auto-replacing existing deposit connection", "machineId", outputId, "oldEdge", existing[0].Id)
+				for _, oldEdge := range existing {
+					if err := e.App.Delete(oldEdge); err != nil {
+						e.App.Logger().Error("[EDGE_HOOK] Failed to delete old edge during replacement", "err", err)
+						return err
+					}
+				}
+				// Continue to allow creation of new edge
+			}
+
+			// Explicitly update machine to new deposit as requested
+			// This ensures the machine points to the new deposit immediately
+			machine, err := e.App.FindRecordById("machines", outputId)
+			if err == nil {
+				machine.Set("deposit", inputId)
+				if err := e.App.Save(machine); err != nil {
+					e.App.Logger().Error("[EDGE_HOOK] Failed to update machine deposit during replacement", "err", err)
+				} else {
+					e.App.Logger().Info("[EDGE_HOOK] Updated machine deposit", "machineId", outputId, "newDepositId", inputId)
+				}
 			}
 		}
 		return e.Next()

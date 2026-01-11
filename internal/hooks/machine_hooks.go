@@ -11,7 +11,7 @@ import (
 	"ketsuna.com/server/internal/gamedata"
 )
 
-func registerMachineHooks(app *pocketbase.PocketBase, inv *InventoryLogic, graph *GraphEconomy) {
+func registerMachineHooks(app *pocketbase.PocketBase, inv *InventoryLogic, _ *GraphEconomy) {
 
 	app.OnRecordCreateRequest("machines").BindFunc(func(e *core.RecordRequestEvent) error {
 		record := e.Record
