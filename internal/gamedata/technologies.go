@@ -19,6 +19,7 @@ type Technology struct {
 	Prerequisites []string       `json:"prerequisites"`  // Tech IDs required before this one
 	Category      string         `json:"category"`       // general, resource, industry, tech
 	Icon          string         `json:"icon,omitempty"`
+	StrategicTip  string         `json:"strategic_tip,omitempty"` // Strategic advice for wiki
 }
 
 // =============================================================================
@@ -31,8 +32,9 @@ var Technologies = map[string]Technology{
 	// -------------------------------------------------------------------------
 	"basic_automation": {
 		ID: "basic_automation", Name: "Un début d'automatisation", Category: "general",
-		Description: "Débloquer les premières machines pour automatiser la production.",
-		Cost:        5000, RequiredLevel: 1,
+		Description:  "Cette technologie marque la fin du travail purement manuel. Elle permet la construction de machines d'extraction autonomes pour le bois et la pierre.",
+		StrategicTip: "C'est la toute première tech. Ne dépensez pas tout votre argent dans les machines tout de suite : gardez du cash pour payer vos premiers employés.",
+		Cost:         5000, RequiredLevel: 1,
 		UnlockTime:   300, // 5 minutes
 		ItemUnlocked: []string{"forestry_machine", "basic_mining_machine", "sawmill", "wooden_plank", "sand_extractor", "quarry"},
 		Icon:         "⚙️",
@@ -43,8 +45,9 @@ var Technologies = map[string]Technology{
 	// -------------------------------------------------------------------------
 	"basic_metallurgy": {
 		ID: "basic_metallurgy", Name: "Métallurgie Fondamentale", Category: "resource",
-		Description: "Transformer les minerais en lingots utilisables.",
-		Cost:        75000, RequiredLevel: 2,
+		Description:  "L'art de purifier les minerais par le feu. Ouvre la voie à la fabrication d'outils en métal et de structures plus résistantes.",
+		StrategicTip: "Débloque les fonderies. Préparez vos stocks de minerais (Fer, Cuivre) PENDANT la recherche pour lancer la production de lingots immédiatement après le déblocage.",
+		Cost:         75000, RequiredLevel: 2,
 		UnlockTime:    600, // 10 minutes
 		Prerequisites: []string{"basic_automation"},
 		ItemUnlocked:  []string{"iron_foundry", "copper_foundry", "iron_ingot", "copper_ingot", "iron_extractor", "copper_extractor"},
@@ -52,8 +55,9 @@ var Technologies = map[string]Technology{
 	},
 	"advanced_mining": {
 		ID: "advanced_mining", Name: "Extraction Avancée", Category: "resource",
-		Description: "Techniques d'extraction pour des minerais plus profonds.",
-		Cost:        120000, RequiredLevel: 3,
+		Description:  "Techniques d'extraction pour des minerais plus profonds.",
+		StrategicTip: "Cette technologie est la clé pour accéder au charbon, carburant essentiel pour vos futures forges d'acier.",
+		Cost:         120000, RequiredLevel: 3,
 		UnlockTime:    900, // 15 minutes
 		Prerequisites: []string{"basic_metallurgy"},
 		ItemUnlocked:  []string{"iron_ore", "copper_ore", "coal"},
@@ -65,8 +69,9 @@ var Technologies = map[string]Technology{
 	// -------------------------------------------------------------------------
 	"glass_production": {
 		ID: "glass_production", Name: "Verrerie Industrielle", Category: "industry",
-		Description: "Transformer la silice en verre.",
-		Cost:        250000, RequiredLevel: 5,
+		Description:  "Transformer la silice en verre.",
+		StrategicTip: "Le verre est requis pour le high-tech. Lancez cette recherche tôt si vous visez une montée en gamme rapide vers les smartphones.",
+		Cost:         250000, RequiredLevel: 5,
 		UnlockTime:    1200, // 20 minutes
 		Prerequisites: []string{"basic_metallurgy"},
 		ItemUnlocked:  []string{"glass_furnace", "glass"},
@@ -74,8 +79,9 @@ var Technologies = map[string]Technology{
 	},
 	"gold_mining": {
 		ID: "gold_mining", Name: "Extraction Aurifère", Category: "resource",
-		Description: "Techniques d'extraction spécialisées pour les gisements d'or.",
-		Cost:        200000, RequiredLevel: 5,
+		Description:  "Techniques d'extraction spécialisées pour les gisements d'or.",
+		StrategicTip: "L'or est votre ressource la plus précieuse avant l'aérospatiale. Protégez vos gisements et évitez de le vendre brut au marché.",
+		Cost:         200000, RequiredLevel: 5,
 		UnlockTime:    1200, // 20 minutes
 		Prerequisites: []string{"basic_metallurgy"},
 		ItemUnlocked:  []string{"gold_mine"},
@@ -83,17 +89,19 @@ var Technologies = map[string]Technology{
 	},
 	"steel_production": {
 		ID: "steel_production", Name: "Forge d'Acier", Category: "industry",
-		Description: "Produire de l'acier à partir de lingots de fer.",
-		Cost:        500000, RequiredLevel: 7,
+		Description:  "Un procédé d'alliage avancé permettant de produire de l'acier, un matériau indispensable à l'industrie lourde et à la mécanique de précision.",
+		StrategicTip: "L'acier est le premier grand 'mur' de ressource. Il faut 3 lingots de fer pour 1 acier. Assurez-vous d'avoir triplé votre production de fer avant de vous lancer.",
+		Cost:         500000, RequiredLevel: 7,
 		UnlockTime:    2700, // 45 minutes
 		Prerequisites: []string{"advanced_mining"},
 		ItemUnlocked:  []string{"steel_press", "steel", "gear"},
 		Icon:          "⚙️",
 	},
 	"first_automatisation": {
-		ID: "first_automatisation", Name: "Un début d'automatisation.", Category: "industry",
-		Description: "Un début d'automatisation.",
-		Cost:        3000000, RequiredLevel: 10,
+		ID: "first_automatisation", Name: "Optimisation de l'Assemblage", Category: "industry",
+		Description:  "Techniques avancées pour coordonner plusieurs machines d'assemblage et optimiser les flux de composants.",
+		StrategicTip: "Cette technologie permet de mieux gérer vos premières lignes d'assemblage. Assurez-vous d'avoir un stock de fer et de cuivre constant pour alimenter vos nouveaux moteurs électriques.",
+		Cost:         3000000, RequiredLevel: 10,
 		UnlockTime:    3600, // 1 heure
 		Prerequisites: []string{"steel_production"},
 		ItemUnlocked:  []string{"assembly_line", "electric_motor", "lithium", "battery_cell"},
@@ -105,8 +113,9 @@ var Technologies = map[string]Technology{
 	// -------------------------------------------------------------------------
 	"plastic_era": {
 		ID: "plastic_era", Name: "Ère du Plastique", Category: "industry",
-		Description: "Raffiner le pétrole en plastique, matériau révolutionnaire.",
-		Cost:        3500000, RequiredLevel: 10,
+		Description:  "Raffiner le pétrole brut permet de créer des polymères synthétiques. Le plastique est léger, isolant et essentiel pour l'électronique.",
+		StrategicTip: "Le pétrole est une ressource volatile. Si vous n'avez pas encore d'extraction propre, achetez du brut quand le cours est bas en prévision de cette recherche.",
+		Cost:         3500000, RequiredLevel: 10,
 		UnlockTime:    3600, // 1 heure
 		Prerequisites: []string{"steel_production"},
 		ItemUnlocked:  []string{"oil_refinery", "plastic", "crude_oil", "electric_cable", "petrol_pumpjack"},
@@ -114,8 +123,9 @@ var Technologies = map[string]Technology{
 	},
 	"lithium_extraction": {
 		ID: "lithium_extraction", Name: "Extraction du Lithium", Category: "resource",
-		Description: "Extraire le lithium, composant essentiel des batteries modernes.",
-		Cost:        500000, RequiredLevel: 10,
+		Description:  "Extraire le lithium, composant essentiel des batteries modernes.",
+		StrategicTip: "Primordial pour l'autonomie énergétique. Couplé au plastique, il vous permettra de dominer le marché des batteries.",
+		Cost:         500000, RequiredLevel: 10,
 		UnlockTime:    2700, // 45 minutes
 		Prerequisites: []string{"plastic_era"},
 		ItemUnlocked:  []string{"lithium_extractor"},
@@ -127,8 +137,9 @@ var Technologies = map[string]Technology{
 	// -------------------------------------------------------------------------
 	"oil_platform_tech": {
 		ID: "oil_platform_tech", Name: "Plateforme Pétrolière Offshore", Category: "industry",
-		Description: "Construire une immense plateforme pour extraire le pétrole en haute mer. Nécessite 100 pompes à pétrole.",
-		Cost:        2000000, RequiredLevel: 12,
+		Description:  "Construire une immense plateforme pour extraire le pétrole en haute mer.",
+		StrategicTip: "Une fois débloquée, cette technologie rend caduque l'extraction terrestre. Prévoyez un grand espace de stockage pour l'énorme débit.",
+		Cost:         2000000, RequiredLevel: 12,
 		UnlockTime:    43200, // 12 heures
 		Prerequisites: []string{"plastic_era"},
 		RequiredItems: []RequiredItem{{ItemID: "petrol_pumpjack", Quantity: 100}},
@@ -137,8 +148,9 @@ var Technologies = map[string]Technology{
 	},
 	"advanced_steel_tech": {
 		ID: "advanced_steel_tech", Name: "Acier Renforcé", Category: "industry",
-		Description: "Développer un acier de haute qualité pour les constructions avancées. Nécessite 50 aciers.",
-		Cost:        800000, RequiredLevel: 10,
+		Description:  "Développer un acier de haute qualité pour les constructions avancées.",
+		StrategicTip: "L'acier renforcé est le pont vers le Tier 5. Ne négligez pas cette recherche si vous voulez construire des usines high-tech.",
+		Cost:         800000, RequiredLevel: 10,
 		UnlockTime:    5400, // 1h30
 		Prerequisites: []string{"steel_production"},
 		RequiredItems: []RequiredItem{{ItemID: "steel", Quantity: 50}},
@@ -150,9 +162,10 @@ var Technologies = map[string]Technology{
 	// TIER 5 - Assemblage (Niveau 15)
 	// -------------------------------------------------------------------------
 	"assembly_line_tech": {
-		ID: "assembly_line_tech", Name: "Ligne d'assemblage de premier Niveau.", Category: "industry",
-		Description: "Assembler des composants complexes en produits finis.",
-		Cost:        25000000, RequiredLevel: 15,
+		ID: "assembly_line_tech", Name: "Ligne d'assemblage", Category: "industry",
+		Description:  "Assembler des composants complexes en produits finis.",
+		StrategicTip: "La ligne d'assemblage multiplie vos possibilités. C'est ici que votre empire industriel commence à devenir véritablement complexe.",
+		Cost:         25000000, RequiredLevel: 15,
 		UnlockTime:    7200, // 2 heures
 		Prerequisites: []string{"plastic_era"},
 		ItemUnlocked:  []string{"assembly_line", "electric_motor", "lithium", "battery_cell"},
@@ -164,8 +177,9 @@ var Technologies = map[string]Technology{
 	// -------------------------------------------------------------------------
 	"electronics": {
 		ID: "electronics", Name: "Électronique Avancée", Category: "tech",
-		Description: "Fabriquer des circuits et processeurs.",
-		Cost:        20000000, RequiredLevel: 18,
+		Description:  "La maîtrise du silicium et du cuivre permet la création de composants logiques. C'est l'aube de l'ère de l'information.",
+		StrategicTip: "L'électronique consomme énormément de cuivre et de plastique. C'est le moment de revoir toute votre logistique pour éviter la congestion.",
+		Cost:         20000000, RequiredLevel: 18,
 		UnlockTime:    10800, // 3 heures
 		Prerequisites: []string{"assembly_line_tech"},
 		ItemUnlocked:  []string{"simple_circuit", "processor"},
@@ -173,8 +187,9 @@ var Technologies = map[string]Technology{
 	},
 	"hightech_manufacturing": {
 		ID: "hightech_manufacturing", Name: "Manufacture High-Tech", Category: "tech",
-		Description: "Produire des appareils électroniques avancés.",
-		Cost:        50000000, RequiredLevel: 20,
+		Description:  "Produire des appareils électroniques avancés.",
+		StrategicTip: "L'étape finale avant l'espace. Les smartphones et ordinateurs sont vos sources de revenus les plus stables à ce stade.",
+		Cost:         50000000, RequiredLevel: 20,
 		UnlockTime:    14400, // 4 heures
 		Prerequisites: []string{"electronics"},
 		ItemUnlocked:  []string{"hightech_factory", "smartphone", "computer"},
@@ -186,8 +201,9 @@ var Technologies = map[string]Technology{
 	// -------------------------------------------------------------------------
 	"advanced_materials": {
 		ID: "advanced_materials", Name: "Matériaux Avancés", Category: "industry",
-		Description: "Développer des matériaux composites et céramiques haute performance.",
-		Cost:        25000000, RequiredLevel: 18,
+		Description:  "Développer des matériaux composites et céramiques haute performance.",
+		StrategicTip: "La fibre de carbone demande beaucoup de plastique. Assurez-vous que vos raffineries tournent à plein régime.",
+		Cost:         25000000, RequiredLevel: 18,
 		UnlockTime:    10800, // 3 heures
 		Prerequisites: []string{"electronics"},
 		ItemUnlocked:  []string{"carbon_fiber", "ceramic", "carbonization_furnace", "ceramic_kiln"},
@@ -195,8 +211,9 @@ var Technologies = map[string]Technology{
 	},
 	"precision_engineering": {
 		ID: "precision_engineering", Name: "Ingénierie de Précision", Category: "tech",
-		Description: "Techniques de fabrication de haute précision pour l'instrumentation.",
-		Cost:        40000000, RequiredLevel: 19,
+		Description:  "Techniques de fabrication de haute précision pour l'instrumentation.",
+		StrategicTip: "Les capteurs sont indispensables pour les satellites. Ne négligez pas l'atelier de précision.",
+		Cost:         40000000, RequiredLevel: 19,
 		UnlockTime:    14400, // 4 heures
 		Prerequisites: []string{"advanced_materials"},
 		ItemUnlocked:  []string{"sensor", "precision_workshop", "hydraulic_cylinder", "hydraulic_press"},
@@ -204,8 +221,9 @@ var Technologies = map[string]Technology{
 	},
 	"industrial_chemistry": {
 		ID: "industrial_chemistry", Name: "Chimie Industrielle", Category: "industry",
-		Description: "Processus chimiques avancés pour les synthèses industrielles.",
-		Cost:        35000000, RequiredLevel: 20,
+		Description:  "Processus chimiques avancés pour les synthèses industrielles.",
+		StrategicTip: "L'acide sulfurique est le catalyseur de toute votre industrie chimique avancée. Produisez-en massivement dès maintenant.",
+		Cost:         35000000, RequiredLevel: 20,
 		UnlockTime:    18000, // 5 heures
 		Prerequisites: []string{"precision_engineering"},
 		ItemUnlocked:  []string{"rubber", "rubber_factory", "sulfuric_acid", "nitrogen"},
@@ -213,8 +231,9 @@ var Technologies = map[string]Technology{
 	},
 	"advanced_metallurgy": {
 		ID: "advanced_metallurgy", Name: "Métallurgie Avancée", Category: "industry",
-		Description: "Alliages spéciaux pour applications critiques.",
-		Cost:        50000000, RequiredLevel: 21,
+		Description:  "Alliages spéciaux pour applications critiques.",
+		StrategicTip: "Les alliages avancés sont requis pour les turbopompes. C'est l'un des composants les plus longs à fabriquer du Tier 6.",
+		Cost:         50000000, RequiredLevel: 21,
 		UnlockTime:    21600, // 6 heures
 		Prerequisites: []string{"industrial_chemistry"},
 		ItemUnlocked:  []string{"advanced_alloy", "advanced_forge", "turbopump", "pressurized_tank"},
@@ -226,8 +245,9 @@ var Technologies = map[string]Technology{
 	// -------------------------------------------------------------------------
 	"aluminum_processing": {
 		ID: "aluminum_processing", Name: "Traitement de l'Aluminium", Category: "resource",
-		Description: "Extraire et raffiner l'aluminium à partir de la bauxite.",
-		Cost:        20000000, RequiredLevel: 22,
+		Description:  "Extraire et raffiner l'aluminium à partir de la bauxite.",
+		StrategicTip: "L'aluminium est léger et indispensable pour l'aérospatiale. Il se traite rapidement, mais nécessite beaucoup de bauxite.",
+		Cost:         20000000, RequiredLevel: 22,
 		UnlockTime:    25200, // 7 heures
 		Prerequisites: []string{"advanced_metallurgy"},
 		ItemUnlocked:  []string{"aluminum_ore", "aluminum_ingot", "aluminum_foundry"},
@@ -235,8 +255,9 @@ var Technologies = map[string]Technology{
 	},
 	"titanium_metallurgy": {
 		ID: "titanium_metallurgy", Name: "Métallurgie du Titane", Category: "resource",
-		Description: "Techniques avancées pour travailler le titane, métal essentiel pour l'aérospatiale.",
-		Cost:        80000000, RequiredLevel: 25,
+		Description:  "Techniques avancées pour travailler le titane, métal essentiel pour l'aérospatiale.",
+		StrategicTip: "Le titane a une production lente. Améliorez vos mines de titane dès que possible pour ne pas ralentir votre programme spatial.",
+		Cost:         80000000, RequiredLevel: 25,
 		UnlockTime:    36000, // 10 heures
 		Prerequisites: []string{"aluminum_processing"},
 		ItemUnlocked:  []string{"titanium_ore", "titanium_ingot", "titanium_foundry", "titanium_mine", "heat_shield"},
@@ -244,8 +265,9 @@ var Technologies = map[string]Technology{
 	},
 	"cryogenics": {
 		ID: "cryogenics", Name: "Cryogénie Industrielle", Category: "industry",
-		Description: "Maîtriser les techniques de liquéfaction des gaz pour produire du carburant spatial.",
-		Cost:        100000000, RequiredLevel: 26,
+		Description:  "Maîtriser les techniques de liquéfaction des gaz pour produire du carburant spatial.",
+		StrategicTip: "La cryogénie demande une infrastructure électrique massive. Assurez-vous d'avoir assez d'énergie avant d'installer vos électrolyseurs.",
+		Cost:         100000000, RequiredLevel: 26,
 		UnlockTime:    43200, // 12 heures
 		Prerequisites: []string{"titanium_metallurgy"},
 		ItemUnlocked:  []string{"hydrogen", "oxygen", "electrolysis_plant", "chemical_plant", "rocket_fuel"},
@@ -253,8 +275,9 @@ var Technologies = map[string]Technology{
 	},
 	"aerospace_engineering": {
 		ID: "aerospace_engineering", Name: "Ingénierie Aérospatiale", Category: "tech",
-		Description: "Concevoir et construire des systèmes spatiaux avancés.",
-		Cost:        200000000, RequiredLevel: 28,
+		Description:  "Concevoir et construire des systèmes spatiaux avancés.",
+		StrategicTip: "L'assemblage des moteurs de fusée est complexe. Centralisez vos stocks de turbopompes et d'alliages avancés près de vos usines aérospatiales.",
+		Cost:         200000000, RequiredLevel: 28,
 		UnlockTime:    64800, // 18 heures
 		Prerequisites: []string{"cryogenics"},
 		ItemUnlocked:  []string{"guidance_system", "rocket_engine", "aerospace_factory", "satellite"},
@@ -262,8 +285,9 @@ var Technologies = map[string]Technology{
 	},
 	"rocket_science": {
 		ID: "rocket_science", Name: "Science des Fusées", Category: "tech",
-		Description: "L'aboutissement de toute la recherche : construire et lancer des fusées !",
-		Cost:        500000000, RequiredLevel: 30,
+		Description:  "L'ingénierie ultime. Combiner des milliers de composants dans un véhicule capable de quitter l'atmosphère terrestre.",
+		StrategicTip: "C'est la dernière ligne droite. La recherche est longue (48h), profitez-en pour stocker les composants les plus chers (guidage, boucliers thermiques) en masse.",
+		Cost:         500000000, RequiredLevel: 30,
 		UnlockTime:    172800, // 48 heures
 		Prerequisites: []string{"aerospace_engineering"},
 		RequiredItems: []RequiredItem{
