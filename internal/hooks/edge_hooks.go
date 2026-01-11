@@ -1,6 +1,8 @@
 package hooks
 
 import (
+	"fmt"
+
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
 )
@@ -30,6 +32,29 @@ func RegisterEdgeRelationHooks(app *pocketbase.PocketBase) {
 		// Case: Machine -> Deposit (assign employees to deposit mining)
 		// (This case might not be common, but handle if needed)
 
+		return e.Next()
+	})
+
+	// Validate BEFORE creation: Constraint check
+	app.OnRecordCreate("edge_relation").BindFunc(func(e *core.RecordEvent) error {
+		inputType := e.Record.GetString("input_type")
+		outputType := e.Record.GetString("output_type")
+		outputId := e.Record.GetString("output_id")
+
+		// Constraint: Machine can only have ONE deposit input
+		if inputType == "deposit" && outputType == "machine" {
+			// Check if this machine already has a deposit connected
+			// We look for any EXISTING edge where output_id = machine AND input_type = deposit
+			filter := fmt.Sprintf("output_id = '%s' && input_type = 'deposit'", outputId)
+			existing, err := e.App.FindRecordsByFilter("edge_relation", filter, "", 1, 0)
+			if err != nil {
+				return err
+			}
+
+			if len(existing) > 0 {
+				return fmt.Errorf("constraint violation: machine %s already has a deposit connected", outputId)
+			}
+		}
 		return e.Next()
 	})
 

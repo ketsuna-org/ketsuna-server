@@ -12,28 +12,6 @@ import (
 )
 
 func registerMachineHooks(app *pocketbase.PocketBase, inv *InventoryLogic, graph *GraphEconomy) {
-	// Hook for Lazy Evaluation on View
-	app.OnRecordViewRequest("machines").BindFunc(func(e *core.RecordRequestEvent) error {
-		if graph != nil {
-			graph.CalculateNodeFlow(e.Record.Id, "machine")
-		}
-		return e.Next()
-	})
-
-	// Hook for Lazy Evaluation on List
-	// REMOVED: Optimizing to avoid N+1 queries.
-	// GraphEconomy handles individual nodes updates via UI interaction or Global Tick.
-	// Listing all machines should purely be a DB fetch.
-	/*
-		app.OnRecordsListRequest("machines").BindFunc(func(e *core.RecordsListRequestEvent) error {
-			if graph != nil {
-				for _, rec := range e.Records {
-					graph.CalculateNodeFlow(rec.Id, "machine")
-				}
-			}
-			return e.Next()
-		})
-	*/
 
 	app.OnRecordCreateRequest("machines").BindFunc(func(e *core.RecordRequestEvent) error {
 		record := e.Record

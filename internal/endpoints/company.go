@@ -46,33 +46,6 @@ func registerCompanyEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, ec
 		return c.JSON(200, breakdown)
 	})
 
-	// GET /api/company/energy-status - Get current energy production/consumption
-	e.Router.GET("/api/company/energy-status", func(c *core.RequestEvent) error {
-		authRecord := c.Auth
-		if authRecord == nil {
-			return apis.NewUnauthorizedError("Vous devez être connecté.", nil)
-		}
-
-		companyId := authRecord.GetString("active_company")
-		if companyId == "" {
-			return apis.NewBadRequestError("Aucune entreprise active", nil)
-		}
-
-		// Trigger Game Loop (Lazy Update)
-		if graph != nil {
-			if _, err := graph.CalculateCompanyInventory(companyId); err != nil {
-				app.Logger().Error("[ENERGY] Failed to update game loop", "err", err)
-			}
-		}
-
-		status, err := eco.CalculateEnergyStatus(companyId)
-		if err != nil {
-			return apis.NewBadRequestError(err.Error(), nil)
-		}
-
-		return c.JSON(200, status)
-	})
-
 	// POST /api/company/levelup - Level up a company
 	e.Router.POST("/api/company/levelup", func(c *core.RequestEvent) error {
 		authRecord := c.Auth

@@ -6,9 +6,10 @@ package gamedata
 
 const (
 	// Deposit Capacity
-	EmployeesPerDepositSize  = 5 // Max employees = size * 5
-	MachinesPerDepositSize   = 1 // Max machines = size * 1
-	MachineEquivalentWorkers = 5 // 1 machine = 5 worker equivalent
+	EmployeesPerDepositSize  = 5   // Max employees = size * 5
+	MachinesPerDepositSize   = 100 // Max machines = size * 100 (Unlimited effectively)
+	MachineEquivalentWorkers = 5   // 1 machine = 5 worker equivalent
+	MachineBufferCapacity    = 100
 )
 
 // GetMaxEmployeesForDeposit returns max employees allowed for a deposit size

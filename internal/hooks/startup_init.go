@@ -122,3 +122,44 @@ func MigrateTechStatusOnStartup(app *pocketbase.PocketBase) {
 
 	app.Logger().Info("[STARTUP] Migrated company_techs to completed status", "count", migratedCount)
 }
+
+// CleanupDuplicateDepositEdges removes excess edges where a machine has multiple deposit inputs
+// It keeps the most recently created edge and deletes the others
+func CleanupDuplicateDepositEdges(app *pocketbase.PocketBase) {
+	// Find all edges that connect a deposit to a machine
+	edges, err := app.FindRecordsByFilter("edge_relation", "input_type='deposit' && output_type='machine'", "-created", 0, 0)
+	if err != nil {
+		app.Logger().Error("[CLEANUP] Failed to fetch edges", "err", err)
+		return
+	}
+
+	machineEdges := make(map[string][]*core.Record)
+	for _, edge := range edges {
+		machineId := edge.GetString("output_id")
+		machineEdges[machineId] = append(machineEdges[machineId], edge)
+	}
+
+	deletedCount := 0
+	for machineId, machineEdgeList := range machineEdges {
+		if len(machineEdgeList) > 1 {
+			// Sort by created desc (already done by query but just ensuring logic)
+			// machineEdgeList[0] is the newest, keep it. Delete the rest.
+			keep := machineEdgeList[0]
+			toDelete := machineEdgeList[1:]
+
+			app.Logger().Warn("[CLEANUP] Machine has multiple deposits", "machineId", machineId, "count", len(machineEdgeList), "keeping", keep.Id)
+
+			for _, edge := range toDelete {
+				if err := app.Delete(edge); err != nil {
+					app.Logger().Error("[CLEANUP] Failed to delete duplicate edge", "edgeId", edge.Id, "err", err)
+				} else {
+					deletedCount++
+				}
+			}
+		}
+	}
+
+	if deletedCount > 0 {
+		app.Logger().Info("[CLEANUP] Removed duplicate deposit edges", "count", deletedCount)
+	}
+}

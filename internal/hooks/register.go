@@ -1,8 +1,6 @@
 package hooks
 
 import (
-	"ketsuna.com/server/internal/gamedata"
-
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
 )
@@ -30,8 +28,6 @@ func RegisterHooks(app *pocketbase.PocketBase, inv *InventoryLogic, eco *Economy
 	registerCompanyHooks(app)
 	registerEmployeeHooks(app)
 	registerCompanyTechHooks(app)
-	registerStockHooks(app)
-	registerShareholderHooks(app)
 	registerInventoryHooks(app)
 	registerDepositHooks(app)
 	registerRecipeHooks(app)
@@ -47,93 +43,17 @@ func RegisterHooks(app *pocketbase.PocketBase, inv *InventoryLogic, eco *Economy
 		// Migrate existing company_techs to have status="completed"
 		MigrateTechStatusOnStartup(app)
 
-		// Ensure all companies have wood deposit and CEO
-		InitializeCompaniesOnStartup(app)
-
-		// Clean up orphaned records (items that no longer exist in gamedata)
-		CleanupOrphanedRecords(app)
+		// Enforce constraint: Remove duplicate deposit -> machine edges
+		CleanupDuplicateDepositEdges(app)
 
 		return e.Next()
 	})
 
 	app.Cron().Add("daily_payroll_market", "0 6 * * *", func() {
 		app.Logger().Info("[CRON] Executing Daily Payroll & Market Update (06:00 UTC)")
-		eco.UpdateMarketPrices()
 		eco.DeductDailyPayroll()
-		SoftCleanWAL(app) // Periodic WAL checkpoint
 	})
 
 	// Start Background Jobs
 	// startEconomyTicker(app, ecoLogic)
-}
-
-// CleanupOrphanedRecords removes records from machines, inventory, and deposits
-// that reference items/resources that no longer exist in gamedata.Items
-func CleanupOrphanedRecords(app *pocketbase.PocketBase) {
-	app.Logger().Info("[CLEANUP] Checking for orphaned records...")
-
-	deletedMachines := 0
-	deletedInventory := 0
-	deletedDeposits := 0
-
-	// Clean up machines with invalid machine_id
-	machines, err := app.FindAllRecords("machines")
-	if err == nil {
-		for _, record := range machines {
-			machineID := record.GetString("machine_id")
-			if machineID != "" && gamedata.GetItem(machineID) == nil {
-				app.Logger().Warn("[CLEANUP] Deleting orphaned machine",
-					"record_id", record.Id,
-					"machine_id", machineID,
-				)
-				if err := app.Delete(record); err == nil {
-					deletedMachines++
-				}
-			}
-		}
-	}
-
-	// Clean up inventory with invalid item_id
-	inventory, err := app.FindAllRecords("inventory")
-	if err == nil {
-		for _, record := range inventory {
-			itemID := record.GetString("item_id")
-			if itemID != "" && gamedata.GetItem(itemID) == nil {
-				app.Logger().Warn("[CLEANUP] Deleting orphaned inventory",
-					"record_id", record.Id,
-					"item_id", itemID,
-				)
-				if err := app.Delete(record); err == nil {
-					deletedInventory++
-				}
-			}
-		}
-	}
-
-	// Clean up deposits with invalid ressource_id
-	deposits, err := app.FindAllRecords("deposits")
-	if err == nil {
-		for _, record := range deposits {
-			ressourceID := record.GetString("ressource_id")
-			if ressourceID != "" && gamedata.GetItem(ressourceID) == nil {
-				app.Logger().Warn("[CLEANUP] Deleting orphaned deposit",
-					"record_id", record.Id,
-					"ressource_id", ressourceID,
-				)
-				if err := app.Delete(record); err == nil {
-					deletedDeposits++
-				}
-			}
-		}
-	}
-
-	if deletedMachines > 0 || deletedInventory > 0 || deletedDeposits > 0 {
-		app.Logger().Info("[CLEANUP] Orphaned records removed",
-			"machines", deletedMachines,
-			"inventory", deletedInventory,
-			"deposits", deletedDeposits,
-		)
-	} else {
-		app.Logger().Info("[CLEANUP] No orphaned records found")
-	}
 }

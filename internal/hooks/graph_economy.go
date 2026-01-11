@@ -41,15 +41,11 @@ func (g *GraphEconomy) CalculateCompanyInventory(companyId string) (map[string]f
 
 	gt := NewGraphTraversal(g.app)
 
-	// 1. Traverse Storages (Update Buffers)
-	// Note: TraverseStorages is a helper to ensure all storage buffers catch up if they are heavily used but not connected to company.
-	// But in Pull-model, we only care about what flows to Company OR what is requested.
-	// We keep it for consistency with old behavior of "updating everything".
-	if err := gt.TraverseStorages(companyId); err != nil {
-		g.app.Logger().Error("[GRAPH] TraverseStorages failed", "companyId", companyId, "err", err)
-	}
+	// NOTE: TraverseStorages REMOVED - it caused double-processing
+	// Storage nodes are now processed naturally during TraverseGlobal via pull model
+	// Each storage pulls from upstream and adds to its buffer in a single pass
 
-	// 2. Delegate to GraphTraversal for Sales (Global Pull)
+	// Delegate to GraphTraversal for Global Pull
 	flow, err := gt.TraverseGlobal(companyId)
 	if err != nil {
 		g.app.Logger().Error("[GRAPH] Traversal failed", "companyId", companyId, "err", err)
@@ -89,102 +85,4 @@ func (g *GraphEconomy) CalculateCompanyInventory(companyId string) (map[string]f
 	}
 
 	return flow, nil
-}
-
-// CalculateNodeFlow calculates how much a node can output NOW.
-// Used for single-node verification or debugging.
-func (g *GraphEconomy) CalculateNodeFlow(nodeId string, nodeType string) (float64, string, error) {
-	gt := NewGraphTraversal(g.app)
-
-	// We need to calculate energy balance first for correct machine processing
-	// But we don't know the company ID easily from just a node ID without looking it up.
-	// We'll try to find it.
-	companyId := ""
-
-	switch nodeType {
-	case "deposit":
-		rec, err := g.app.FindRecordById("deposits", nodeId)
-		if err == nil {
-			companyId = rec.GetString("company")
-		}
-	case "machine":
-		rec, err := g.app.FindRecordById("machines", nodeId)
-		if err == nil {
-			companyId = rec.GetString("company")
-		}
-	case "storage":
-		// Storage implies inventory or machine
-		rec, err := g.app.FindRecordById("machines", nodeId) // Try machine first
-		if err == nil {
-			companyId = rec.GetString("company")
-		}
-	}
-
-	if companyId != "" {
-		// Initialize energy
-		balance, err := gt.CalculateEnergyBalance(companyId, nil)
-		if err == nil {
-			gt.energyBalance = balance
-		} else {
-			// Fallback if calculation fails
-			gt.energyBalance = &EnergyBalance{
-				Ratio:     1.0,
-				Available: 1000000, // Infinite fallback
-			}
-			g.app.Logger().Error("[GRAPH] Failed to calculate energy balance, using fallback", "err", err)
-		}
-	} else {
-		// No company found? Use fallback
-		gt.energyBalance = &EnergyBalance{Ratio: 1.0}
-	}
-
-	// Use TraverseTarget for local calculation
-	flow, err := gt.TraverseTarget(nodeId, nodeType)
-	if err != nil {
-		return 0, "", err
-	}
-
-	return flow.Quantity, flow.ItemID, nil
-}
-
-// Helper to manually trigger an update for testing
-func (g *GraphEconomy) ManualUpdate(companyId string) error {
-	_, err := g.CalculateCompanyInventory(companyId)
-	return err
-}
-
-// TriggerNodeUpdate finds downstream sinks and updates them.
-// This allows "Push-like" updates starting from a source/machine.
-func (g *GraphEconomy) TriggerNodeUpdate(nodeId string) error {
-	gt := NewGraphTraversal(g.app)
-
-	storages, companies, err := gt.FindSinks(nodeId)
-	if err != nil {
-		return err
-	}
-
-	// Update Storages
-	for _, storeId := range storages {
-		// Check local status of storage (Buffer Update)
-		if _, err := gt.TraverseTarget(storeId, "storage"); err != nil {
-			g.app.Logger().Error("[GRAPH] Trigger update failed for storage", "id", storeId, "err", err)
-		}
-	}
-
-	// Update Companies
-	for _, compId := range companies {
-		// Also Lock here since we are calling TraverseGlobal
-		mu := g.getLock(compId)
-		mu.Lock()
-		// defer inside loop is risky if loop is long, but OK for small loops.
-		// Better style: func closure.
-		func() {
-			defer mu.Unlock()
-			if _, err := gt.TraverseGlobal(compId); err != nil {
-				g.app.Logger().Error("[GRAPH] Trigger update failed for company", "id", compId, "err", err)
-			}
-		}()
-	}
-
-	return nil
 }
