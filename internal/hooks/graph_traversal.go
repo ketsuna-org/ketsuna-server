@@ -207,10 +207,16 @@ func (gt *GraphTraversal) ProcessMachine(machineId, requestedBy string, recursiv
 		return &NodeFlow{}, nil
 	}
 
+	// Determine Active Recipe: machine.active_recipe takes priority, fallback to itemDef.UseRecipe
+	activeRecipeId := machine.GetString("active_recipe")
+	if activeRecipeId == "" {
+		activeRecipeId = itemDef.UseRecipe
+	}
+
 	// Determine Output Item
 	outputItem := itemDef.Product
-	if outputItem == "" && itemDef.UseRecipe != "" {
-		if r := gamedata.GetRecipe(itemDef.UseRecipe); r != nil {
+	if outputItem == "" && activeRecipeId != "" {
+		if r := gamedata.GetRecipe(activeRecipeId); r != nil {
 			outputItem = r.OutputItem
 		}
 	}
@@ -300,12 +306,14 @@ func (gt *GraphTraversal) ProcessMachine(machineId, requestedBy string, recursiv
 		gt.app.Logger().Info("[GRAPH] ProcessMachine: Capped cycles", "machine", machineId, "timeBasedCycles", timeBasedCycles, "capped", maxCyclesPerTick)
 	}
 
-	if itemDef.UseRecipe != "" {
-		recipe := gamedata.GetRecipe(itemDef.UseRecipe)
-		for _, input := range recipe.Inputs {
-			possible := int(inputsReceived[input.ItemID] / float64(input.Quantity))
-			if possible < maxCycles {
-				maxCycles = possible
+	if activeRecipeId != "" {
+		recipe := gamedata.GetRecipe(activeRecipeId)
+		if recipe != nil {
+			for _, input := range recipe.Inputs {
+				possible := int(inputsReceived[input.ItemID] / float64(input.Quantity))
+				if possible < maxCycles {
+					maxCycles = possible
+				}
 			}
 		}
 	} else {
@@ -370,11 +378,13 @@ func (gt *GraphTraversal) ProcessMachine(machineId, requestedBy string, recursiv
 				// Consume from Storage (for processing machines)
 				consumed := 0.0
 
-				if itemDef.UseRecipe != "" {
+				if activeRecipeId != "" {
 					// Recipe-based consumption: consume based on recipe inputs * cycles
-					recipe := gamedata.GetRecipe(itemDef.UseRecipe)
-					for _, input := range recipe.Inputs {
-						consumed += float64(input.Quantity) * float64(maxCycles)
+					recipe := gamedata.GetRecipe(activeRecipeId)
+					if recipe != nil {
+						for _, input := range recipe.Inputs {
+							consumed += float64(input.Quantity) * float64(maxCycles)
+						}
 					}
 				} else {
 					// Non-recipe: consume totalProduced (1:1 ratio)
