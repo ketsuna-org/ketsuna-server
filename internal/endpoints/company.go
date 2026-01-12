@@ -90,6 +90,7 @@ func registerCompanyEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, ec
 			if err := txApp.Save(company); err != nil {
 				return apis.NewBadRequestError("Erreur lors de la sauvegarde", err)
 			}
+			hooks.RecordCompanyStatistic(txApp, company.Id, "level_up", "money_out", float64(cost))
 
 			return c.JSON(200, map[string]interface{}{
 				"success":  true,
@@ -232,6 +233,7 @@ func registerCompanyEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, ec
 				if err := txApp.Save(company); err != nil {
 					return apis.NewBadRequestError("Erreur lors du paiement", err)
 				}
+				hooks.RecordCompanyStatistic(txApp, company.Id, data.TechId, "money_out", tech.Cost)
 
 				return c.JSON(200, map[string]interface{}{
 					"success":      true,
@@ -256,6 +258,7 @@ func registerCompanyEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, ec
 			if err := txApp.Save(company); err != nil {
 				return apis.NewBadRequestError("Erreur lors du paiement", err)
 			}
+			hooks.RecordCompanyStatistic(txApp, company.Id, data.TechId, "money_out", tech.Cost)
 
 			return c.JSON(200, map[string]interface{}{
 				"success": true,

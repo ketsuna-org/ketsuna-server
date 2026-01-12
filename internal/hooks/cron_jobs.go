@@ -4,7 +4,6 @@ import (
 	"fmt"
 )
 
-
 func (l *EconomyLogic) DeductDailyPayroll() {
 	companies, _ := l.app.FindRecordsByFilter("companies", "", "", 0, 0)
 	for _, company := range companies {
@@ -27,6 +26,9 @@ func (l *EconomyLogic) DeductDailyPayroll() {
 
 		company.Set("balance", newBalance)
 		l.app.Save(company)
+		if monthlyCost > 0 {
+			RecordCompanyStatistic(l.app, company.Id, "payroll", "money_out", monthlyCost) // Using "payroll" as item_id
+		}
 
 		if monthlyCost > 0 {
 			l.app.Logger().Info("[PAYROLL] Deducted", "company", company.GetString("name"), "amount", monthlyCost, "employees", len(employees), "machines", len(machines))

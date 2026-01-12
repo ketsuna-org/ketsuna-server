@@ -82,7 +82,7 @@ func (gt *GraphTraversal) TraverseGlobal(companyId string) (map[string]float64, 
 
 				// CONSUME from the source (storage) - transfer to company
 				switch inputType {
-case "storage":
+				case "storage":
 					// Find storage's linked inventory and deduct
 					invRecords, err := gt.app.FindRecordsByFilter("inventory", fmt.Sprintf("linked_storage = '%s' && item_id = '%s'", inputId, flow.ItemID), "", 1, 0)
 					if err == nil && len(invRecords) > 0 {
@@ -133,7 +133,7 @@ func (gt *GraphTraversal) TraverseTarget(nodeId, nodeType string) (*NodeFlow, er
 }
 
 func (gt *GraphTraversal) preloadData(companyId string) {
-	invRecords, _ := gt.app.FindRecordsByFilter("inventory", fmt.Sprintf("company = '%s'", companyId), "", 0, 0)
+	invRecords, _ := gt.app.FindRecordsByFilter("inventory", fmt.Sprintf("company = '%s' && linked_storage = ''", companyId), "", 0, 0)
 	for _, rec := range invRecords {
 		gt.inventoryCache[rec.GetString("item_id")] = rec
 	}
@@ -269,6 +269,9 @@ func (gt *GraphTraversal) ProcessMachine(machineId, requestedBy string, recursiv
 	if recursive {
 		// Traverse up to get inputs
 		for _, edge := range gt.edgeCache[machineId] {
+			if activeRecipeId != "" && edge.GetString("input_type") == "deposit" {
+				continue
+			}
 			flow, _ := gt.processNodeRecursive(edge.GetString("input_id"), edge.GetString("input_type"), machineId, true)
 			if flow.Quantity > 0 {
 				inputsReceived[flow.ItemID] += flow.Quantity
@@ -373,24 +376,27 @@ func (gt *GraphTraversal) ProcessMachine(machineId, requestedBy string, recursiv
 
 			switch inputType {
 			case "deposit":
-				// Consume from Deposit's QUANTITY directly (extractors don't use harvested buffer)
-				consumed := totalProduced // 1:1 extraction ratio
+				// Only Extractors (no recipe) can consume from Deposit
+				if activeRecipeId == "" {
+					// Consume from Deposit's QUANTITY directly (extractors don't use harvested buffer)
+					consumed := totalProduced // 1:1 extraction ratio
 
-				deposit, err := gt.app.FindRecordById("deposits", inputId)
-				if err == nil {
-					curQty := deposit.GetFloat("quantity")
-					newQty := curQty - consumed
-					if newQty < 0 {
-						newQty = 0
+					deposit, err := gt.app.FindRecordById("deposits", inputId)
+					if err == nil {
+						curQty := deposit.GetFloat("quantity")
+						newQty := curQty - consumed
+						if newQty < 0 {
+							newQty = 0
+						}
+
+						deposit.Set("quantity", math.Round(newQty))
+						gt.app.Save(deposit)
+
+						// Record consumption statistic
+						gt.recordStatistic(machine.GetString("company"), deposit.GetString("ressource_id"), "consumption", consumed)
+
+						gt.app.Logger().Info("[GRAPH] Extractor Consumed from Deposit", "machine", machineId, "deposit", inputId, "consumed", consumed, "remaining", newQty)
 					}
-
-					deposit.Set("quantity", math.Round(newQty))
-					gt.app.Save(deposit)
-
-					// Record consumption statistic
-					gt.recordStatistic(machine.GetString("company"), deposit.GetString("ressource_id"), "consumption", consumed)
-
-					gt.app.Logger().Info("[GRAPH] Extractor Consumed from Deposit", "machine", machineId, "deposit", inputId, "consumed", consumed, "remaining", newQty)
 				}
 			case "storage":
 				// Consume from Storage (for processing machines)

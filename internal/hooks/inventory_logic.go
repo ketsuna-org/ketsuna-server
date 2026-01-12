@@ -417,6 +417,7 @@ func (l *InventoryLogic) SellInventory(app core.App, companyId, itemId string, q
 	if err := app.Save(company); err != nil {
 		return nil, err
 	}
+	RecordCompanyStatistic(app, companyId, itemId, "money_in", revenue)
 
 	return &SellResult{
 		Revenue:       revenue,

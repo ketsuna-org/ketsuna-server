@@ -71,6 +71,8 @@ func registerInventoryHooks(app *pocketbase.PocketBase) {
 			company.Set("balance", current-totalCost)
 			if err := e.App.Save(company); err != nil {
 				e.App.Logger().Error("[PURCHASE] erreur save company", "error", err)
+			} else {
+				RecordCompanyStatistic(e.App, companyId, itemId, "money_out", totalCost)
 			}
 			e.App.Logger().Info("[PURCHASE] Company purchased item", "companyId", companyId, "itemId", itemId, "qty", qty, "totalCost", totalCost)
 		}
@@ -133,6 +135,8 @@ func registerInventoryHooks(app *pocketbase.PocketBase) {
 			company.Set("balance", bal-totalCost)
 			if err := e.App.Save(company); err != nil {
 				e.App.Logger().Error("[PURCHASE-UPDATE] erreur save company", "error", err)
+			} else {
+				RecordCompanyStatistic(e.App, company.Id, rec.GetString("item"), "money_out", totalCost)
 			}
 			e.App.Logger().Info("[PURCHASE-UPDATE] Company purchased more items", "companyId", company.Id, "added", added, "totalCost", totalCost)
 		}
