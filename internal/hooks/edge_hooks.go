@@ -4,7 +4,9 @@ import (
 	"fmt"
 
 	"github.com/pocketbase/pocketbase"
+	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
+	"ketsuna.com/server/internal/gamedata"
 )
 
 // RegisterEdgeRelationHooks registers hooks for edge_relation collection
@@ -44,6 +46,32 @@ func RegisterEdgeRelationHooks(app *pocketbase.PocketBase) {
 
 		// Constraint: Machine can only have ONE deposit input
 		if inputType == "deposit" && outputType == "machine" {
+			// 0. CHECK COMPATIBILITY
+			machine, err := e.App.FindRecordById("machines", outputId)
+			if err != nil {
+				return err
+			}
+			deposit, err := e.App.FindRecordById("deposits", inputId)
+			if err != nil {
+				return err
+			}
+
+			itemDef := gamedata.GetItem(machine.GetString("machine_id"))
+			if itemDef != nil {
+				// Only check if it's an extractor (Product defined, No Recipe)
+				// If it has a recipe, it shouldn't be connecting to a deposit anyway (enforced by graph logic now, but let's be safe)
+				// Actually, graph logic "allows" connection but ignores it.
+				// But we want to forbid the edge creation if it makes no sense.
+
+				isExtractor := itemDef.Product != "" && itemDef.UseRecipe == ""
+				if isExtractor {
+					targetResource := deposit.GetString("ressource_id")
+					if itemDef.Product != targetResource {
+						return apis.NewBadRequestError(fmt.Sprintf("Incompatible : Cette machine extrait du '%s' mais le gisement est du '%s'", itemDef.Product, targetResource), nil)
+					}
+				}
+			}
+
 			// Check if this machine already has a deposit connected
 			// We look for any EXISTING edge where output_id = machine AND input_type = deposit
 			filter := fmt.Sprintf("output_id = '%s' && input_type = 'deposit'", outputId)
@@ -66,14 +94,12 @@ func RegisterEdgeRelationHooks(app *pocketbase.PocketBase) {
 
 			// Explicitly update machine to new deposit as requested
 			// This ensures the machine points to the new deposit immediately
-			machine, err := e.App.FindRecordById("machines", outputId)
-			if err == nil {
-				machine.Set("deposit", inputId)
-				if err := e.App.Save(machine); err != nil {
-					e.App.Logger().Error("[EDGE_HOOK] Failed to update machine deposit during replacement", "err", err)
-				} else {
-					e.App.Logger().Info("[EDGE_HOOK] Updated machine deposit", "machineId", outputId, "newDepositId", inputId)
-				}
+			// Machine/Deposit are already fetched above
+			machine.Set("deposit", inputId)
+			if err := e.App.Save(machine); err != nil {
+				e.App.Logger().Error("[EDGE_HOOK] Failed to update machine deposit during replacement", "err", err)
+			} else {
+				e.App.Logger().Info("[EDGE_HOOK] Updated machine deposit", "machineId", outputId, "newDepositId", inputId)
 			}
 		}
 		return e.Next()
