@@ -52,14 +52,26 @@ func processExplorationResult(app *pocketbase.PocketBase, exploration *core.Reco
 		// Create Deposit
 		companyId := exploration.GetString("company")
 		resourceId := exploration.GetString("target_resource_id")
+		distance := exploration.GetFloat("distance")
 
-		// Randomize Quantity (e.g. 50k to 500k)
-		baseQty := 50000.0
-		qtyParams := rand.Float64() * 450000.0 // 0 to 450k
-		quantity := math.Floor(baseQty + qtyParams)
+		// Default distance if not set
+		if distance <= 0 {
+			distance = 10
+		}
 
-		// Randomize Size (Level 1 to 10)
+		// Calculate Quantity based on distance and size
+		// Formula: A 10km patch yields 1000 to 10000 resources based on size (1-10)
+		// So: quantity = (distance / 10) * size * 1000
+		// Size 1 at 10km = 1000, Size 10 at 10km = 10000
+		// Size 5 at 20km = 2 * 5 * 1000 = 10000
 		size := 1 + rand.Intn(10) // Random level 1-10
+		baseMultiplier := distance / 10.0
+		quantity := math.Floor(baseMultiplier * float64(size) * 1000)
+
+		// Ensure minimum quantity of 100
+		if quantity < 100 {
+			quantity = 100
+		}
 
 		// Create record
 		depositsCollection, _ := app.FindCollectionByNameOrId("deposits")
@@ -68,6 +80,7 @@ func processExplorationResult(app *pocketbase.PocketBase, exploration *core.Reco
 		deposit.Set("ressource_id", resourceId)
 		deposit.Set("quantity", quantity)
 		deposit.Set("size", size)
+		deposit.Set("distance", distance) // Store distance on deposit for reference
 
 		if err := app.Save(deposit); err != nil {
 			app.Logger().Error("Failed to create deposit", "err", err)
@@ -78,7 +91,7 @@ func processExplorationResult(app *pocketbase.PocketBase, exploration *core.Reco
 		} else {
 			exploration.Set("status", "Succès")
 			// Create notification message (optional)
-			createNotification(app, companyId, "Exploration réussie !", fmt.Sprintf("Gisement découvert : %.0f unités (Niveau %d)", quantity, size))
+			createNotification(app, companyId, "Exploration réussie !", fmt.Sprintf("Gisement découvert à %.0f km : %.0f unités (Niveau %d)", distance, quantity, size))
 		}
 	} else {
 		exploration.Set("status", "Echec")

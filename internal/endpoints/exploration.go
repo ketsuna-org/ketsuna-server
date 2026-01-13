@@ -19,8 +19,9 @@ func registerExplorationEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent
 		}
 
 		data := struct {
-			EmployeeId string `json:"employeeId"`
-			ResourceId string `json:"resourceId"`
+			EmployeeId string  `json:"employeeId"`
+			ResourceId string  `json:"resourceId"`
+			Distance   float64 `json:"distance"` // Distance in km (default 10 if not provided)
 		}{}
 		// Support old/new field names just in case, though frontend sends employeeId and resourceId
 		if err := c.BindBody(&data); err != nil {
@@ -32,6 +33,19 @@ func registerExplorationEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent
 		}
 		if data.ResourceId == "" {
 			return apis.NewBadRequestError("resourceId requis", nil)
+		}
+
+		// Default distance to 10km if not provided or invalid
+		if data.Distance <= 0 {
+			data.Distance = 10
+		}
+
+		// Calculate exploration cost
+		// Free up to 10km, then 10,000€ per extra km
+		var explorationCost float64 = 0
+		if data.Distance > 10 {
+			extraKm := data.Distance - 10
+			explorationCost = extraKm * 10000
 		}
 
 		return app.RunInTransaction(func(txApp core.App) error {
@@ -58,6 +72,19 @@ func registerExplorationEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent
 				return apis.NewBadRequestError("Cet employé est déjà occupé", nil)
 			}
 
+			// 3. Check and deduct balance if exploration has a cost
+			if explorationCost > 0 {
+				currentBalance := company.GetFloat("balance")
+				if currentBalance < explorationCost {
+					return apis.NewBadRequestError(
+						fmt.Sprintf("Fonds insuffisants. Coût exploration: %.0f€, Solde: %.0f€", explorationCost, currentBalance), nil)
+				}
+				company.Set("balance", currentBalance-explorationCost)
+				if err := txApp.Save(company); err != nil {
+					return fmt.Errorf("failed to update company balance: %w", err)
+				}
+			}
+
 			// 4. Create Exploration Record
 			exCollection, err := txApp.FindCollectionByNameOrId("explorations")
 			if err != nil {
@@ -68,6 +95,7 @@ func registerExplorationEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent
 			exRecord.Set("company", companyId)
 			exRecord.Set("employee", data.EmployeeId)
 			exRecord.Set("target_resource_id", data.ResourceId)
+			exRecord.Set("distance", data.Distance) // Store distance for quantity calculation
 			exRecord.Set("status", "En cours")
 
 			// Set expiration based on level logic (kept from old implementation but simplified)
@@ -90,6 +118,8 @@ func registerExplorationEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent
 				"message":       "Mission d'exploration lancée",
 				"explorationId": exRecord.Id,
 				"endTime":       exRecord.GetDateTime("end_time"),
+				"cost":          explorationCost,
+				"distance":      data.Distance,
 			})
 		})
 	})
