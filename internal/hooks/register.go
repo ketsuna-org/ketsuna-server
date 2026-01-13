@@ -40,6 +40,9 @@ func RegisterHooks(app *pocketbase.PocketBase, inv *InventoryLogic, eco *Economy
 
 		app.Logger().Info("[STARTUP] Running initialization...")
 
+		// Backfill base assets for existing companies (wood deposit, CEO, forestry machine)
+		InitializeCompaniesOnStartup(app)
+
 		// Migrate existing company_techs to have status="completed"
 		MigrateTechStatusOnStartup(app)
 

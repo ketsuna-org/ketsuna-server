@@ -36,7 +36,7 @@ var Technologies = map[string]Technology{
 		StrategicTip: "C'est la toute première tech. Ne dépensez pas tout votre argent dans les machines tout de suite : gardez du cash pour payer vos premiers employés.",
 		Cost:         5000, RequiredLevel: 1,
 		UnlockTime:   300, // 5 minutes
-		ItemUnlocked: []string{"forestry_machine", "basic_mining_machine", "sawmill", "wooden_plank", "sand_extractor"},
+		ItemUnlocked: []string{"charcoal_mine", "basic_mining_machine", "sawmill", "wooden_plank", "sand_extractor"},
 		Icon:         "⚙️",
 	},
 

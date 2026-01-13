@@ -37,6 +37,9 @@ func InitializeCompaniesOnStartup(app *pocketbase.PocketBase) {
 			createCEOEmployee(app, companyId, companyName)
 			app.Logger().Info("[STARTUP] Created CEO employee", "company", companyName)
 		}
+
+		// 3. Check and create starter forestry machine if needed
+		EnsureForestryMachineOnCompanyCreation(app, companyId)
 	}
 
 	app.Logger().Info("[STARTUP] Company initialization complete", "companies", len(companies))
@@ -93,6 +96,37 @@ func EnsureWoodDepositOnCompanyCreation(app *pocketbase.PocketBase, companyId st
 	// Use hardcoded "wood" resource ID (from gamedata)
 	createWoodDeposit(app, companyId, "wood")
 	app.Logger().Info("[COMPANY] Auto-created Wood Deposit for new company", "company", companyId)
+}
+
+// EnsureForestryMachineOnCompanyCreation is called when a company is created to auto-add a starter forestry machine
+func EnsureForestryMachineOnCompanyCreation(app *pocketbase.PocketBase, companyId string) {
+	// Avoid duplicates if hooks rerun
+	existing, err := app.FindRecordsByFilter("machines", fmt.Sprintf("company = '%s' && machine_id = 'forestry_machine'", companyId), "", 1, 0)
+	if err != nil {
+		app.Logger().Error("[COMPANY] Failed to check forestry machine", "company", companyId, "err", err)
+		return
+	}
+	if len(existing) > 0 {
+		return
+	}
+
+	collection, err := app.FindCollectionByNameOrId("machines")
+	if err != nil {
+		app.Logger().Error("[COMPANY] Failed to find machines collection", "err", err)
+		return
+	}
+
+	machine := core.NewRecord(collection)
+	machine.Set("company", companyId)
+	machine.Set("machine_id", "forestry_machine")
+	machine.Set("placed", false)
+
+	if err := app.Save(machine); err != nil {
+		app.Logger().Error("[COMPANY] Failed to create forestry machine", "company", companyId, "err", err)
+		return
+	}
+
+	app.Logger().Info("[COMPANY] Auto-created Forestry Machine for new company", "company", companyId)
 }
 
 // MigrateTechStatusOnStartup fixes existing company_techs records that don't have a status
