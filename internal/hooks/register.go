@@ -57,6 +57,25 @@ func RegisterHooks(app *pocketbase.PocketBase, inv *InventoryLogic, eco *Economy
 		eco.DeductDailyPayroll()
 	})
 
+	// LAZY CALCULATION: Replaced Cron with On-Demand API
+	// The frontend detects activity (user login/interaction) and calls this endpoint.
+	// It calculates elapsed time since last run for each edge, functioning exactly like the cron but only when needed.
+	edgeTransfer := NewEdgeTransferCron(app)
+	app.OnServe().BindFunc(func(e *core.ServeEvent) error {
+		e.Router.POST("/api/factory/process", func(e *core.RequestEvent) error {
+			// Optional: Check if user is authenticated (e.Auth != nil)
+
+			// Run the transfer logic (same logic as before)
+			if err := edgeTransfer.TransferAll(); err != nil {
+				app.Logger().Error("[LAZY] Edge transfer failed", "err", err)
+				return e.BadRequestError("Transfer failed", err)
+			}
+
+			return e.JSON(200, map[string]string{"status": "ok"})
+		})
+		return e.Next()
+	})
+
 	// Start Background Jobs
 	// startEconomyTicker(app, ecoLogic)
 }

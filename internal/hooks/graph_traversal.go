@@ -263,45 +263,31 @@ func (gt *GraphTraversal) ProcessMachine(machineId, requestedBy string, recursiv
 		return &NodeFlow{ItemID: outputItem}, nil
 	}
 
-	// 3. Check Inputs (The "Pull")
+	// 3. Check Inputs from LOCAL INPUT BUFFERS (Edge-based model)
+	// Edges fill input buffers; machines consume from input buffers
 	inputsReceived := make(map[string]float64)
 
-	if recursive {
-		// Traverse up to get inputs
-		for _, edge := range gt.edgeCache[machineId] {
-			if activeRecipeId != "" && edge.GetString("input_type") == "deposit" {
-				continue
-			}
-			flow, _ := gt.processNodeRecursive(edge.GetString("input_id"), edge.GetString("input_type"), machineId, true)
-			if flow.Quantity > 0 {
-				inputsReceived[flow.ItemID] += flow.Quantity
-			}
-		}
-	} else {
-		// "Targeted" mode: Check immediate availability.
-		// For Storage nodes: Check their current 'quantity' in DB/Cache (Snapshot)
-		// For Machine nodes: Harder. We might skip them or assume they have produced 0 for this 'tick' if not recursing.
-		// Specification says: "Mets à jour uniquement les entrées (inputs) directement adjacentes." aka "Calcul local".
-		for _, edge := range gt.edgeCache[machineId] {
-			// If input is Storage, we can peek at its inventory
-			if edge.GetString("input_type") == "storage" {
-				// We need to fetch the storage's inventory record
-				// Optimization: processNodeRecursive with recursive=false checks the storage snapshot.
-
-				flow, _ := gt.processNodeRecursive(edge.GetString("input_id"), edge.GetString("input_type"), machineId, false)
-				if flow.Quantity > 0 {
-					inputsReceived[flow.ItemID] += flow.Quantity
+	if activeRecipeId != "" {
+		// Recipe machine: read from input buffers (filled by edge transfers)
+		inputBuffers, err := gt.app.FindRecordsByFilter("machine_input_buffers",
+			fmt.Sprintf("machine = '%s'", machineId), "", 0, 0)
+		if err == nil {
+			for _, buf := range inputBuffers {
+				itemId := buf.GetString("item_id")
+				qty := buf.GetFloat("quantity")
+				if qty > 0 {
+					inputsReceived[itemId] = qty
 				}
 			}
-			// If input is Machine, without recursion, we get 0 from it (it hasn't pushed anything).
 		}
+		gt.app.Logger().Info("[GRAPH] ProcessMachine: Input buffers", "machine", machineId, "inputs", inputsReceived)
 	}
+	// Note: Extractors don't use input buffers - they pull directly from deposits
 
 	// 4. Calculate Real Cycles (Resource-based)
 	maxCycles := timeBasedCycles
 
 	// Cap at reasonable max per tick to prevent resource hogging
-	// This ensures fair sharing between multiple machines pulling from same storage
 	const maxCyclesPerTick = 3
 	if maxCycles > maxCyclesPerTick {
 		maxCycles = maxCyclesPerTick
@@ -312,7 +298,8 @@ func (gt *GraphTraversal) ProcessMachine(machineId, requestedBy string, recursiv
 		recipe := gamedata.GetRecipe(activeRecipeId)
 		if recipe != nil {
 			for _, input := range recipe.Inputs {
-				possible := int(inputsReceived[input.ItemID] / float64(input.Quantity))
+				available := inputsReceived[input.ItemID]
+				possible := int(available / float64(input.Quantity))
 				if possible < maxCycles {
 					maxCycles = possible
 				}
@@ -330,8 +317,11 @@ func (gt *GraphTraversal) ProcessMachine(machineId, requestedBy string, recursiv
 			extractionPerCycle = 1
 		}
 
+		// CRITICAL: Extractors MUST have a deposit connected to produce anything
+		hasDepositInput := false
 		for _, edge := range gt.edgeCache[machineId] {
 			if edge.GetString("input_type") == "deposit" {
+				hasDepositInput = true
 				depositId := edge.GetString("input_id")
 				deposit, err := gt.app.FindRecordById("deposits", depositId)
 				if err == nil {
@@ -364,6 +354,12 @@ func (gt *GraphTraversal) ProcessMachine(machineId, requestedBy string, recursiv
 				}
 				break // Only one deposit per extractor
 			}
+		}
+
+		// If no deposit is connected, extractor cannot produce anything
+		if !hasDepositInput {
+			gt.app.Logger().Info("[GRAPH] Extractor has no deposit input, 0 production", "machine", machineId)
+			maxCycles = 0
 		}
 	}
 
@@ -436,55 +432,42 @@ func (gt *GraphTraversal) ProcessMachine(machineId, requestedBy string, recursiv
 					}
 				}
 			case "storage":
-				// Consume from Storage (for processing machines)
-				consumed := 0.0
+				// OLD: Recipe machines used to consume from storage directly
+				// NEW: Edges now transfer items to input buffers; skip this
+				// Kept for backwards compatibility with non-edge connections
+				gt.app.Logger().Info("[GRAPH] Skipping storage consumption (edge-based model)", "machine", machineId, "storage", inputId)
 
-				if activeRecipeId != "" {
-					// Recipe-based consumption: consume based on recipe inputs * cycles
-					recipe := gamedata.GetRecipe(activeRecipeId)
-					if recipe != nil {
-						for _, input := range recipe.Inputs {
-							consumed += float64(input.Quantity) * float64(maxCycles)
-						}
-					}
-				} else {
-					// Non-recipe: consume totalProduced (1:1 ratio)
-					consumed = totalProduced
-				}
-
-				// Find the storage's linked inventory and deduct
-				invRecords, err := gt.app.FindRecordsByFilter("inventory", fmt.Sprintf("linked_storage = '%s'", inputId), "", 1, 0)
-				if err == nil && len(invRecords) > 0 {
-					inv := invRecords[0]
-					curQty := inv.GetFloat("quantity")
-					newQty := curQty - consumed
-					if newQty < 0 {
-						newQty = 0
-					}
-
-					inv.Set("quantity", newQty)
-					gt.app.Save(inv)
-
-					// Record consumption statistic
-					gt.recordStatistic(machine.GetString("company"), inv.GetString("item_id"), "consumption", consumed)
-
-					gt.app.Logger().Info("[GRAPH] Machine Consumed from Storage", "machine", machineId, "storage", inputId, "consumed", consumed, "left", newQty)
-				}
 			case "machine":
-				// NEW: Consume from upstream machine's output buffer
-				consumed := totalProduced // 1:1 for now, or based on recipe
+				// OLD: Recipe machines used to consume from upstream machine output buffer
+				// NEW: Edges now transfer items to input buffers; skip this
+				// Kept for backwards compatibility with non-edge connections
+				gt.app.Logger().Info("[GRAPH] Skipping machine consumption (edge-based model)", "machine", machineId, "upstream", inputId)
+			}
+		}
 
-				upstreamBuffer := gt.getMachineBuffer(inputId)
-				if upstreamBuffer != nil {
-					curQty := upstreamBuffer.GetFloat("quantity")
-					newQty := curQty - consumed
-					if newQty < 0 {
-						newQty = 0
+		// NEW: Consume from INPUT BUFFERS for recipe machines
+		if activeRecipeId != "" {
+			recipe := gamedata.GetRecipe(activeRecipeId)
+			if recipe != nil {
+				for _, input := range recipe.Inputs {
+					consumeQty := float64(input.Quantity) * float64(maxCycles)
+
+					// Find and deduct from input buffer
+					inputBuffers, err := gt.app.FindRecordsByFilter("machine_input_buffers",
+						fmt.Sprintf("machine = '%s' && item_id = '%s'", machineId, input.ItemID), "", 1, 0)
+					if err == nil && len(inputBuffers) > 0 {
+						buf := inputBuffers[0]
+						curQty := buf.GetFloat("quantity")
+						newQty := curQty - consumeQty
+						if newQty < 0 {
+							newQty = 0
+						}
+						buf.Set("quantity", newQty)
+						gt.app.Save(buf)
+
+						gt.recordStatistic(machine.GetString("company"), input.ItemID, "consumption", consumeQty)
+						gt.app.Logger().Info("[GRAPH] Machine consumed from input buffer", "machine", machineId, "item", input.ItemID, "consumed", consumeQty, "remaining", newQty)
 					}
-					upstreamBuffer.Set("quantity", newQty)
-					gt.app.Save(upstreamBuffer)
-
-					gt.app.Logger().Info("[GRAPH] Machine Consumed from Machine Buffer", "machine", machineId, "upstream", inputId, "consumed", consumed, "bufferLeft", newQty)
 				}
 			}
 		}
