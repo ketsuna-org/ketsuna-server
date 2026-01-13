@@ -95,6 +95,9 @@ func registerCompanyHooks(app *pocketbase.PocketBase) {
 		// Create default Wood Deposit
 		EnsureWoodDepositOnCompanyCreation(app, companyId)
 
+		// Create starter forestry machine for the PDG
+		EnsureForestryMachineOnCompanyCreation(app, companyId)
+
 		if ceoId == "" {
 			return nil
 		}
