@@ -336,11 +336,27 @@ func (gt *GraphTraversal) ProcessMachine(machineId, requestedBy string, recursiv
 				deposit, err := gt.app.FindRecordById("deposits", depositId)
 				if err == nil {
 					available := deposit.GetFloat("quantity")
-					possible := int(available / extractionPerCycle) // Use actual extraction rate
 
-					if possible < maxCycles {
-						maxCycles = possible
+					// PARTIAL EXTRACTION LOGIC:
+					// If deposit has less than needed for a full cycle, we can still extract what's left
+					if available <= 0 {
+						// Deposit is empty, no cycles possible
+						maxCycles = 0
+					} else {
+						possible := int(available / extractionPerCycle)
+						if possible < maxCycles {
+							maxCycles = possible
+						}
+
+						// If possible == 0 but available > 0, we can do a partial cycle
+						// This allows extracting the remainder even if it's less than a full cycle
+						if maxCycles == 0 && available > 0 {
+							// We'll do a "partial cycle" - extract what's left
+							maxCycles = 1 // Force 1 cycle, production will be adjusted below
+							gt.app.Logger().Info("[GRAPH] Extractor: Partial extraction mode", "machine", machineId, "deposit", depositId, "available", available, "extractionPerCycle", extractionPerCycle)
+						}
 					}
+
 					gt.app.Logger().Info("[GRAPH] Extractor checking deposit", "machine", machineId, "deposit", depositId, "available", available, "extractionPerCycle", extractionPerCycle, "maxCycles", maxCycles)
 				} else {
 					gt.app.Logger().Error("[GRAPH] Extractor: Deposit not found", "depositId", depositId)
@@ -378,19 +394,40 @@ func (gt *GraphTraversal) ProcessMachine(machineId, requestedBy string, recursiv
 			case "deposit":
 				// Only Extractors (no recipe) can consume from Deposit
 				if activeRecipeId == "" {
-					// Consume from Deposit's QUANTITY directly (extractors don't use harvested buffer)
-					consumed := totalProduced // 1:1 extraction ratio
-
 					deposit, err := gt.app.FindRecordById("deposits", inputId)
 					if err == nil {
 						curQty := deposit.GetFloat("quantity")
+
+						// PARTIAL EXTRACTION: Consume only what's available (min of totalProduced and curQty)
+						consumed := totalProduced
+						if consumed > curQty {
+							consumed = curQty
+							// Adjust totalProduced to what was actually extracted
+							totalProduced = consumed
+							gt.app.Logger().Info("[GRAPH] Extractor partial extraction", "machine", machineId, "deposit", inputId, "wanted", float64(maxCycles)*qtyPerCycle, "extracted", consumed)
+						}
+
 						newQty := curQty - consumed
 						if newQty < 0 {
 							newQty = 0
 						}
 
 						deposit.Set("quantity", math.Round(newQty))
-						gt.app.Save(deposit)
+
+						// DELETE DEPOSIT IF DEPLETED
+						if newQty <= 0 {
+							gt.app.Logger().Info("[GRAPH] Deposit depleted, deleting", "deposit", inputId, "consumed", consumed)
+							if err := gt.app.Delete(deposit); err != nil {
+								gt.app.Logger().Error("[GRAPH] Failed to delete depleted deposit", "deposit", inputId, "err", err)
+							} else {
+								// Also delete the edge connecting to this deposit
+								if err := gt.app.Delete(edge); err != nil {
+									gt.app.Logger().Error("[GRAPH] Failed to delete edge to depleted deposit", "edge", edge.Id, "err", err)
+								}
+							}
+						} else {
+							gt.app.Save(deposit)
+						}
 
 						// Record consumption statistic
 						gt.recordStatistic(machine.GetString("company"), deposit.GetString("ressource_id"), "consumption", consumed)
