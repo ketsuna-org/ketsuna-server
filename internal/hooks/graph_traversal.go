@@ -508,25 +508,16 @@ func (gt *GraphTraversal) ProcessMachine(machineId, requestedBy string, recursiv
 			bufferWorked = true
 		}
 
-		// Return production immediately if buffer failed
-		if !bufferWorked {
-			gt.app.Logger().Info("[GRAPH] Machine produced (direct mode)", "machine", machineId, "item", outputItem, "qty", totalProduced)
-			return &NodeFlow{ItemID: outputItem, Quantity: totalProduced, NodeType: "machine", NodeID: machineId}, nil
-		}
+		// Always return only what was produced THIS cycle
+		// The buffer is for internal machine-to-machine transfers, not for bulk dumping
+		gt.app.Logger().Info("[GRAPH] Machine produced", "machine", machineId, "item", outputItem, "qty", totalProduced, "bufferWorked", bufferWorked)
+		return &NodeFlow{ItemID: outputItem, Quantity: totalProduced, NodeType: "machine", NodeID: machineId}, nil
 	}
 
-	// Return what's in the OUTPUT BUFFER for downstream consumption
-	// This allows fan-out: multiple consumers can pull from this buffer
-	outputBuffer := gt.getMachineBuffer(machineId)
-	bufferQty := 0.0
-	if outputBuffer != nil {
-		bufferQty = outputBuffer.GetFloat("quantity")
-	} else {
-		// Buffer not available, nothing produced yet this cycle but might have been earlier
-		gt.app.Logger().Info("[GRAPH] Machine buffer not found, returning 0", "machine", machineId)
-	}
-
-	return &NodeFlow{ItemID: outputItem, Quantity: bufferQty, NodeType: "machine", NodeID: machineId}, nil
+	// NOTE: We only reach here if recursive=false (targeted mode), NOT in global traversal
+	// In targeted mode, just return 0 - no production without full traversal
+	gt.app.Logger().Info("[GRAPH] Machine in non-recursive mode, returning 0", "machine", machineId)
+	return &NodeFlow{ItemID: outputItem, Quantity: 0, NodeType: "machine", NodeID: machineId}, nil
 }
 
 func (gt *GraphTraversal) ProcessStorage(storageId, requestedBy string, recursive bool) (*NodeFlow, error) {
