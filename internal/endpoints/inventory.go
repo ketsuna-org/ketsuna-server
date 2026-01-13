@@ -41,15 +41,10 @@ func registerInventoryEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, 
 			return apis.NewBadRequestError("Aucune entreprise active pour cet utilisateur", nil)
 		}
 
-		// Graph Economy: Pull Updates BEFORE transaction to avoid deadlock
-		// (graph uses g.app while transaction uses txApp - they can't share locks)
-		if graph != nil {
-			_, err := graph.CalculateCompanyInventory(companyId)
-			if err != nil {
-				app.Logger().Error("Graph calc failed during sell", "err", err)
-				// Continue anyway - we'll sell from stored inventory
-			}
-		}
+		// NOTE: Do NOT call graph.CalculateCompanyInventory here!
+		// Calling it before sell caused a bug where production was instantly added
+		// right before selling, making inventory appear to replenish immediately.
+		// Production calculation should only happen on explicit refresh calls.
 
 		return app.RunInTransaction(func(txApp core.App) error {
 			company, err := txApp.FindRecordById("companies", companyId)
