@@ -7,6 +7,8 @@ import (
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
+
+	"ketsuna.com/server/internal/hooks"
 )
 
 func registerExplorationEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent) {
@@ -83,6 +85,8 @@ func registerExplorationEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent
 				if err := txApp.Save(company); err != nil {
 					return fmt.Errorf("failed to update company balance: %w", err)
 				}
+				// Record statistic
+				hooks.RecordCompanyStatistic(txApp, companyId, "exploration", "money_out", explorationCost)
 			}
 
 			// 4. Create Exploration Record
