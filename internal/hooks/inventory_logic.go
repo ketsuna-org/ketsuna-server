@@ -143,6 +143,106 @@ func (l *InventoryLogic) HasEnoughItems(app core.App, companyId, itemId string, 
 	return record.GetInt("quantity") >= requiredQty
 }
 
+// HasEnoughItemsInStorage checks if company has enough of an item in a specific storage location
+// storageId: "" = general inventory (linked_storage is empty), non-empty = specific storage unit
+func (l *InventoryLogic) HasEnoughItemsInStorage(app core.App, companyId, itemId string, requiredQty int, storageId string) bool {
+	// Check item type - machines are not stored in linked_storage inventory
+	item := gamedata.GetItem(itemId)
+	if item != nil && item.Type == "Machine" {
+		// For machines, count unplaced machines in machines collection
+		records, err := app.FindRecordsByFilter("machines",
+			fmt.Sprintf("company = '%s' && machine_id = '%s' && placed = false", companyId, itemId),
+			"-created",
+			requiredQty,
+			0,
+		)
+		if err != nil {
+			return false
+		}
+		return len(records) >= requiredQty
+	}
+
+	// For standard items, check inventory collection with storage filter
+	var filter string
+	if storageId == "" {
+		// General inventory: linked_storage is empty
+		filter = fmt.Sprintf("company = '%s' && item_id = '%s' && linked_storage = ''", companyId, itemId)
+	} else {
+		// Specific storage unit
+		filter = fmt.Sprintf("company = '%s' && item_id = '%s' && linked_storage = '%s'", companyId, itemId, storageId)
+	}
+
+	record, err := app.FindFirstRecordByFilter("inventory", filter)
+	if err != nil || record == nil {
+		return false
+	}
+	return record.GetInt("quantity") >= requiredQty
+}
+
+// UpdateInventoryInStorage adds or removes quantity from an inventory item at a specific storage location
+// storageId: "" = general inventory (linked_storage is empty), non-empty = specific storage unit
+func (l *InventoryLogic) UpdateInventoryInStorage(app core.App, companyId, itemId string, quantity int, storageId string) error {
+	// Check if item is a Machine - machines don't use linked_storage
+	item := gamedata.GetItem(itemId)
+	if item != nil && item.Type == "Machine" {
+		// Delegate to regular UpdateInventory for machines
+		return l.UpdateInventory(app, companyId, itemId, quantity)
+	}
+
+	// Build filter with storage constraint
+	var filter string
+	if storageId == "" {
+		// General inventory: linked_storage is empty
+		filter = fmt.Sprintf("company = '%s' && item_id = '%s' && linked_storage = ''", companyId, itemId)
+	} else {
+		// Specific storage unit
+		filter = fmt.Sprintf("company = '%s' && item_id = '%s' && linked_storage = '%s'", companyId, itemId, storageId)
+	}
+
+	record, err := app.FindFirstRecordByFilter("inventory", filter)
+	if err != nil {
+		// Not found - treating as nil record
+		record = nil
+	}
+
+	if record != nil {
+		// --- UPDATE ---
+		currentQty := record.GetInt("quantity")
+		newQty := currentQty + quantity
+
+		if newQty < 0 {
+			return fmt.Errorf("quantité insuffisante (disponible: %d, requis: %d)", currentQty, int(math.Abs(float64(quantity))))
+		}
+
+		if newQty == 0 {
+			return app.Delete(record)
+		}
+
+		record.Set("quantity", newQty)
+		return app.Save(record)
+	}
+
+	// --- CREATE ---
+	if quantity <= 0 {
+		return fmt.Errorf("impossible de retirer %d d'un inventaire inexistant. Item: %s, Company: %s, Storage: %s", quantity, itemId, companyId, storageId)
+	}
+
+	collection, err := app.FindCollectionByNameOrId("inventory")
+	if err != nil {
+		return err
+	}
+
+	newRecord := core.NewRecord(collection)
+	newRecord.Set("company", companyId)
+	newRecord.Set("item_id", itemId)
+	newRecord.Set("quantity", quantity)
+	if storageId != "" {
+		newRecord.Set("linked_storage", storageId)
+	}
+
+	return app.Save(newRecord)
+}
+
 // HasRequiredTechnology checks if a company has the required tech for a recipe
 // Returns (hasIt bool, techName string) - techName is empty if no tech required
 func (l *InventoryLogic) HasRequiredTechnology(app core.App, companyId, recipeId string) (bool, string) {
@@ -371,7 +471,10 @@ type SellResult struct {
 
 // SellInventory handles selling items to the system
 // Uses static gamedata for item data - no market updates since items are static
-func (l *InventoryLogic) SellInventory(app core.App, companyId, itemId string, quantity int) (*SellResult, error) {
+// storageId: if empty string "", targets general company inventory (linked_storage = ”).
+//
+//	if non-empty, targets inventory from that specific storage unit.
+func (l *InventoryLogic) SellInventory(app core.App, companyId, itemId string, quantity int, storageId string) (*SellResult, error) {
 	if quantity <= 0 {
 		return nil, fmt.Errorf("quantité doit être > 0")
 	}
@@ -387,9 +490,16 @@ func (l *InventoryLogic) SellInventory(app core.App, companyId, itemId string, q
 		return nil, fmt.Errorf("unknown item: %s", itemId)
 	}
 
-	// Check stock using item_id
-	if !l.HasEnoughItems(app, companyId, itemId, quantity) {
-		inv, _ := app.FindFirstRecordByFilter("inventory", fmt.Sprintf("company = '%s' && item_id = '%s'", companyId, itemId))
+	// Check stock using item_id and optional storage filter
+	if !l.HasEnoughItemsInStorage(app, companyId, itemId, quantity, storageId) {
+		// Build filter for current stock check
+		var filter string
+		if storageId == "" {
+			filter = fmt.Sprintf("company = '%s' && item_id = '%s' && linked_storage = ''", companyId, itemId)
+		} else {
+			filter = fmt.Sprintf("company = '%s' && item_id = '%s' && linked_storage = '%s'", companyId, itemId, storageId)
+		}
+		inv, _ := app.FindFirstRecordByFilter("inventory", filter)
 		have := 0
 		if inv != nil {
 			have = inv.GetInt("quantity")
@@ -402,8 +512,8 @@ func (l *InventoryLogic) SellInventory(app core.App, companyId, itemId string, q
 	unitSellPrice := math.Round(((unitBuyPrice/2)+math.SmallestNonzeroFloat64)*100) / 100
 	revenue := unitSellPrice * float64(quantity)
 
-	// Update Inventory
-	if err := l.UpdateInventory(app, companyId, itemId, -quantity); err != nil {
+	// Update Inventory (using storageId to target correct record)
+	if err := l.UpdateInventoryInStorage(app, companyId, itemId, -quantity, storageId); err != nil {
 		return nil, err
 	}
 

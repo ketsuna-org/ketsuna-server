@@ -23,8 +23,9 @@ func registerInventoryEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, 
 		}
 
 		data := struct {
-			ItemId   string  `json:"itemId" form:"itemId"`
-			Quantity float64 `json:"quantity" form:"quantity"`
+			ItemId    string  `json:"itemId" form:"itemId"`
+			Quantity  float64 `json:"quantity" form:"quantity"`
+			StorageId string  `json:"storageId" form:"storageId"` // Optional: if set, sell from this storage's inventory
 		}{}
 
 		if err := c.BindBody(&data); err != nil {
@@ -59,7 +60,7 @@ func registerInventoryEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, 
 				return apis.NewForbiddenError("Accès refusé", nil)
 			}
 
-			result, err := inv.SellInventory(txApp, companyId, data.ItemId, int(data.Quantity))
+			result, err := inv.SellInventory(txApp, companyId, data.ItemId, int(data.Quantity), data.StorageId)
 			if err != nil {
 				return apis.NewBadRequestError(err.Error(), nil)
 			}
