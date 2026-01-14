@@ -31,7 +31,7 @@ func (l *EconomyLogic) DeductDailyPayroll() {
 		}
 
 		if monthlyCost > 0 {
-			l.app.Logger().Info("[PAYROLL] Deducted", "company", company.GetString("name"), "amount", monthlyCost, "employees", len(employees), "machines", len(machines))
+			l.app.Logger().Debug("[PAYROLL] Deducted", "company", company.GetString("name"), "amount", monthlyCost, "employees", len(employees), "machines", len(machines))
 		}
 	}
 }

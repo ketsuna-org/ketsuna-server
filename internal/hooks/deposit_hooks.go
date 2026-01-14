@@ -46,7 +46,7 @@ func registerDepositHooks(app *pocketbase.PocketBase) {
 		// We could strictly audit if ONLY location changed, but preventing critical fields changes is the goal.
 
 		// Optional: Log the valid move
-		// app.Logger().Info("[DEPOSITS] Location updated", "id", newRecord.Id, "new_loc", newRecord.GetString("location"))
+		// app.Logger().Debug("[DEPOSITS] Location updated", "id", newRecord.Id, "new_loc", newRecord.GetString("location"))
 
 		return e.Next()
 	})
@@ -59,7 +59,7 @@ func registerDepositHooks(app *pocketbase.PocketBase) {
 		// Check if deposit is empty
 		if quantity <= 0 {
 			depositId := record.Id
-			app.Logger().Info("[DEPOSITS] Deposit is empty, cleaning up", "id", depositId)
+			app.Logger().Debug("[DEPOSITS] Deposit is empty, cleaning up", "id", depositId)
 
 			// Delete all connected edges first
 			edgeFilter := fmt.Sprintf("source_id = '%s' || target_id = '%s'", depositId, depositId)
@@ -69,7 +69,7 @@ func registerDepositHooks(app *pocketbase.PocketBase) {
 					if err := app.Delete(edge); err != nil {
 						app.Logger().Error("[DEPOSITS] Failed to delete edge", "edge_id", edge.Id, "err", err)
 					} else {
-						app.Logger().Info("[DEPOSITS] Deleted connected edge", "edge_id", edge.Id)
+						app.Logger().Debug("[DEPOSITS] Deleted connected edge", "edge_id", edge.Id)
 					}
 				}
 			}
@@ -78,12 +78,12 @@ func registerDepositHooks(app *pocketbase.PocketBase) {
 			if err := app.Delete(record); err != nil {
 				app.Logger().Error("[DEPOSITS] Failed to delete empty deposit", "id", depositId, "err", err)
 			} else {
-				app.Logger().Info("[DEPOSITS] Deleted empty deposit", "id", depositId)
+				app.Logger().Debug("[DEPOSITS] Deleted empty deposit", "id", depositId)
 			}
 		}
 
 		return e.Next()
 	})
 
-	app.Logger().Info("[HOOKS] Deposit hooks registered")
+	app.Logger().Debug("[HOOKS] Deposit hooks registered")
 }

@@ -31,7 +31,7 @@ func registerCompanyTechHooks(app *pocketbase.PocketBase) {
 
 		// Use static gamedata for tech name
 		techName := gamedata.GetTechnologyName(techId)
-		app.Logger().Info("Technologie supprimée.", "technology", techName)
+		app.Logger().Debug("Technologie supprimée.", "technology", techName)
 
 		return e.Next()
 	})
@@ -59,7 +59,7 @@ func UpdateCompanyTechStatus(app core.App, companyId string) error {
 		if err := app.Save(record); err != nil {
 			app.Logger().Error("[TECH] Failed to auto-complete research", "id", record.Id, "err", err)
 		} else {
-			app.Logger().Info("[TECH] Research completed", "tech", record.GetString("technology_id"), "company", companyId)
+			app.Logger().Debug("[TECH] Research completed", "tech", record.GetString("technology_id"), "company", companyId)
 		}
 	}
 

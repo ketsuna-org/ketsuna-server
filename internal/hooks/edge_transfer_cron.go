@@ -106,7 +106,7 @@ func (c *EdgeTransferCron) processEdge(edge *core.Record, now time.Time) error {
 		return fmt.Errorf("failed to save edge: %w", err)
 	}
 
-	c.app.Logger().Info("[EDGE_TRANSFER] Transferred",
+	c.app.Logger().Debug("[EDGE_TRANSFER] Transferred",
 		"edge", edge.Id,
 		"item", sourceItem,
 		"qty", toTransfer,

@@ -194,7 +194,7 @@ func registerInventoryEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, 
 				return apis.NewBadRequestError("Erreur sauvegarde entreprise", err)
 			}
 
-			app.Logger().Info("[PURCHASE] Company purchased item", "companyId", companyId, "itemId", item.ID, "qty", data.Quantity, "totalCost", totalCost)
+			app.Logger().Debug("[PURCHASE] Company purchased item", "companyId", companyId, "itemId", item.ID, "qty", data.Quantity, "totalCost", totalCost)
 
 			return c.JSON(200, map[string]interface{}{
 				"success": true,
@@ -382,7 +382,7 @@ func registerInventoryEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, 
 			}
 		}
 
-		app.Logger().Info("[REFRESH] Lazy calculation completed", "company", companyId, "producedItems", len(producedItems), "storageItems", len(storageInventory))
+		app.Logger().Debug("[REFRESH] Lazy calculation completed", "company", companyId, "producedItems", len(producedItems), "storageItems", len(storageInventory))
 
 		return c.JSON(200, map[string]interface{}{
 			"success":          true,

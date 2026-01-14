@@ -38,7 +38,7 @@ func RegisterHooks(app *pocketbase.PocketBase, inv *InventoryLogic, eco *Economy
 	// Run data correction and initialization on startup
 	app.OnServe().BindFunc(func(e *core.ServeEvent) error {
 
-		app.Logger().Info("[STARTUP] Running initialization...")
+		app.Logger().Debug("[STARTUP] Running initialization...")
 
 		// Backfill base assets for existing companies (wood deposit, CEO, forestry machine)
 		InitializeCompaniesOnStartup(app)
@@ -53,7 +53,7 @@ func RegisterHooks(app *pocketbase.PocketBase, inv *InventoryLogic, eco *Economy
 	})
 
 	app.Cron().Add("daily_payroll_market", "0 6 * * *", func() {
-		app.Logger().Info("[CRON] Executing Daily Payroll & Market Update (06:00 UTC)")
+		app.Logger().Debug("[CRON] Executing Daily Payroll & Market Update (06:00 UTC)")
 		eco.DeductDailyPayroll()
 	})
 

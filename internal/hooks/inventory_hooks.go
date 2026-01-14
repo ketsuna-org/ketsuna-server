@@ -74,7 +74,7 @@ func registerInventoryHooks(app *pocketbase.PocketBase) {
 			} else {
 				RecordCompanyStatistic(e.App, companyId, itemId, "money_out", totalCost)
 			}
-			e.App.Logger().Info("[PURCHASE] Company purchased item", "companyId", companyId, "itemId", itemId, "qty", qty, "totalCost", totalCost)
+			e.App.Logger().Debug("[PURCHASE] Company purchased item", "companyId", companyId, "itemId", itemId, "qty", qty, "totalCost", totalCost)
 		}
 
 		return e.Next()
@@ -138,7 +138,7 @@ func registerInventoryHooks(app *pocketbase.PocketBase) {
 			} else {
 				RecordCompanyStatistic(e.App, company.Id, rec.GetString("item"), "money_out", totalCost)
 			}
-			e.App.Logger().Info("[PURCHASE-UPDATE] Company purchased more items", "companyId", company.Id, "added", added, "totalCost", totalCost)
+			e.App.Logger().Debug("[PURCHASE-UPDATE] Company purchased more items", "companyId", company.Id, "added", added, "totalCost", totalCost)
 		}
 
 		if newQ < 0 {

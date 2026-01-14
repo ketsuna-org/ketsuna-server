@@ -26,7 +26,7 @@ func RegisterEdgeRelationHooks(app *pocketbase.PocketBase) {
 				if err := e.App.Save(machine); err != nil {
 					e.App.Logger().Error("[EDGE_HOOK] Failed to set deposit on machine", "err", err)
 				} else {
-					e.App.Logger().Info("[EDGE_HOOK] Assigned deposit to machine", "machineId", outputId, "depositId", inputId)
+					e.App.Logger().Debug("[EDGE_HOOK] Assigned deposit to machine", "machineId", outputId, "depositId", inputId)
 				}
 			}
 		}
@@ -82,7 +82,7 @@ func RegisterEdgeRelationHooks(app *pocketbase.PocketBase) {
 
 			if len(existing) > 0 {
 				// Auto-replace behavior: Delete the existing edge(s)
-				e.App.Logger().Info("[EDGE_HOOK] Auto-replacing existing deposit connection", "machineId", outputId, "oldEdge", existing[0].Id)
+				e.App.Logger().Debug("[EDGE_HOOK] Auto-replacing existing deposit connection", "machineId", outputId, "oldEdge", existing[0].Id)
 				for _, oldEdge := range existing {
 					if err := e.App.Delete(oldEdge); err != nil {
 						e.App.Logger().Error("[EDGE_HOOK] Failed to delete old edge during replacement", "err", err)
@@ -99,7 +99,7 @@ func RegisterEdgeRelationHooks(app *pocketbase.PocketBase) {
 			if err := e.App.Save(machine); err != nil {
 				e.App.Logger().Error("[EDGE_HOOK] Failed to update machine deposit during replacement", "err", err)
 			} else {
-				e.App.Logger().Info("[EDGE_HOOK] Updated machine deposit", "machineId", outputId, "newDepositId", inputId)
+				e.App.Logger().Debug("[EDGE_HOOK] Updated machine deposit", "machineId", outputId, "newDepositId", inputId)
 			}
 		}
 		return e.Next()
@@ -118,7 +118,7 @@ func RegisterEdgeRelationHooks(app *pocketbase.PocketBase) {
 				if err := e.App.Save(machine); err != nil {
 					e.App.Logger().Error("[EDGE_HOOK] Failed to clear deposit on machine", "err", err)
 				} else {
-					e.App.Logger().Info("[EDGE_HOOK] Cleared deposit from machine", "machineId", outputId)
+					e.App.Logger().Debug("[EDGE_HOOK] Cleared deposit from machine", "machineId", outputId)
 				}
 			}
 		}

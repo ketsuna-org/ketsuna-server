@@ -28,21 +28,21 @@ func InitializeCompaniesOnStartup(app *pocketbase.PocketBase) {
 		deposits, _ := app.FindRecordsByFilter("deposits", fmt.Sprintf("company = '%s'", companyId), "", 1, 0)
 		if len(deposits) == 0 {
 			createWoodDeposit(app, companyId, woodItemId)
-			app.Logger().Info("[STARTUP] Created wood deposit", "company", companyName)
+			app.Logger().Debug("[STARTUP] Created wood deposit", "company", companyName)
 		}
 
 		// 2. Check and create CEO if needed
 		ceoEmployees, _ := app.FindRecordsByFilter("employees", fmt.Sprintf("employer = '%s' && poste = 'PDG'", companyId), "", 1, 0)
 		if len(ceoEmployees) == 0 {
 			createCEOEmployee(app, companyId, companyName)
-			app.Logger().Info("[STARTUP] Created CEO employee", "company", companyName)
+			app.Logger().Debug("[STARTUP] Created CEO employee", "company", companyName)
 		}
 
 		// 3. Check and create starter forestry machine if needed
 		EnsureForestryMachineOnCompanyCreation(app, companyId)
 	}
 
-	app.Logger().Info("[STARTUP] Company initialization complete", "companies", len(companies))
+	app.Logger().Debug("[STARTUP] Company initialization complete", "companies", len(companies))
 }
 
 // createWoodDeposit creates a wood deposit with 1M quantity and level 3
@@ -88,14 +88,14 @@ func createCEOEmployee(app *pocketbase.PocketBase, companyId string, companyName
 // EnsureCEOOnCompanyCreation is called when a company is created to auto-add a CEO
 func EnsureCEOOnCompanyCreation(app *pocketbase.PocketBase, companyId string, companyName string) {
 	createCEOEmployee(app, companyId, companyName)
-	app.Logger().Info("[COMPANY] Auto-created CEO for new company", "company", companyName)
+	app.Logger().Debug("[COMPANY] Auto-created CEO for new company", "company", companyName)
 }
 
 // EnsureWoodDepositOnCompanyCreation is called when a company is created to auto-add a wood deposit
 func EnsureWoodDepositOnCompanyCreation(app *pocketbase.PocketBase, companyId string) {
 	// Use hardcoded "wood" resource ID (from gamedata)
 	createWoodDeposit(app, companyId, "wood")
-	app.Logger().Info("[COMPANY] Auto-created Wood Deposit for new company", "company", companyId)
+	app.Logger().Debug("[COMPANY] Auto-created Wood Deposit for new company", "company", companyId)
 }
 
 // EnsureForestryMachineOnCompanyCreation is called when a company is created to auto-add a starter forestry machine
@@ -126,7 +126,7 @@ func EnsureForestryMachineOnCompanyCreation(app *pocketbase.PocketBase, companyI
 		return
 	}
 
-	app.Logger().Info("[COMPANY] Auto-created Forestry Machine for new company", "company", companyId)
+	app.Logger().Debug("[COMPANY] Auto-created Forestry Machine for new company", "company", companyId)
 }
 
 // MigrateTechStatusOnStartup fixes existing company_techs records that don't have a status
@@ -140,7 +140,7 @@ func MigrateTechStatusOnStartup(app *pocketbase.PocketBase) {
 	}
 
 	if len(records) == 0 {
-		app.Logger().Info("[STARTUP] No company_techs records to migrate")
+		app.Logger().Debug("[STARTUP] No company_techs records to migrate")
 		return
 	}
 
@@ -154,7 +154,7 @@ func MigrateTechStatusOnStartup(app *pocketbase.PocketBase) {
 		}
 	}
 
-	app.Logger().Info("[STARTUP] Migrated company_techs to completed status", "count", migratedCount)
+	app.Logger().Debug("[STARTUP] Migrated company_techs to completed status", "count", migratedCount)
 }
 
 // CleanupDuplicateDepositEdges removes excess edges where a machine has multiple deposit inputs
@@ -194,6 +194,6 @@ func CleanupDuplicateDepositEdges(app *pocketbase.PocketBase) {
 	}
 
 	if deletedCount > 0 {
-		app.Logger().Info("[CLEANUP] Removed duplicate deposit edges", "count", deletedCount)
+		app.Logger().Debug("[CLEANUP] Removed duplicate deposit edges", "count", deletedCount)
 	}
 }

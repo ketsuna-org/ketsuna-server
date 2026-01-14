@@ -89,7 +89,7 @@ func registerMachineHooks(app *pocketbase.PocketBase, inv *InventoryLogic, _ *Gr
 				return deductErr
 			}
 
-			app.Logger().Info("[MACHINES] Machine assigned (tx)", "machineId", machineItemId, "companyId", companyId, "remaining", currentQty-1)
+			app.Logger().Debug("[MACHINES] Machine assigned (tx)", "machineId", machineItemId, "companyId", companyId, "remaining", currentQty-1)
 			return nil
 		})
 
@@ -122,7 +122,7 @@ func registerMachineHooks(app *pocketbase.PocketBase, inv *InventoryLogic, _ *Gr
 					if err := app.Save(record); err != nil {
 						app.Logger().Error("[MACHINES] Failed to auto-start production", "err", err)
 					} else {
-						app.Logger().Info("[MACHINES] Auto-started production for placed machine", "machineId", record.Id)
+						app.Logger().Debug("[MACHINES] Auto-started production for placed machine", "machineId", record.Id)
 					}
 				}
 			}
@@ -147,7 +147,7 @@ func registerMachineHooks(app *pocketbase.PocketBase, inv *InventoryLogic, _ *Gr
 			if err := inv.UpdateInventory(app, companyId, machineItemId, 1); err != nil {
 				app.Logger().Error("[MACHINES] Erreur remise en stock", "error", err)
 			} else {
-				app.Logger().Info("[MACHINES] Assignation supprimée. Machine renvoyée au stock", "machineId", machineItemId)
+				app.Logger().Debug("[MACHINES] Assignation supprimée. Machine renvoyée au stock", "machineId", machineItemId)
 			}
 		}
 		return e.Next()
@@ -205,7 +205,7 @@ func EnforceMaxEmployees(app *pocketbase.PocketBase) {
 				app.Logger().Error("[FIX] Failed to save corrected machine", "error", err)
 			} else {
 				fixedCount++
-				app.Logger().Info("[FIX] Corrected machine employee count",
+				app.Logger().Debug("[FIX] Corrected machine employee count",
 					"machineId", machine.Id,
 					"removed", excess,
 					"kept", maxEmp)
@@ -214,7 +214,7 @@ func EnforceMaxEmployees(app *pocketbase.PocketBase) {
 	}
 
 	if fixedCount > 0 {
-		app.Logger().Info("[FIX] EnforceMaxEmployees completed", "machinesFixed", fixedCount)
+		app.Logger().Debug("[FIX] EnforceMaxEmployees completed", "machinesFixed", fixedCount)
 	}
 }
 
