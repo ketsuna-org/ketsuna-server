@@ -104,6 +104,19 @@ func (gt *GraphTraversal) TraverseGlobal(companyId string) (map[string]float64, 
 		}
 	}
 
+	// 3.5. Catch-up: Process Disconnected Machines (Orphans)
+	// Machines not connected to the company (even indirectly) were not visited above.
+	// We must process them so they still consume inputs and produce into their buffers.
+	for _, rec := range allMachines {
+		machineId := rec.Id
+		visitKey := fmt.Sprintf("machine:%s", machineId)
+		if !gt.visited[visitKey] {
+			// Process in Global mode (recursive=true) to update timers and consume inputs
+			// We discard the return flow because it doesn't reach the company
+			gt.ProcessMachine(machineId, "GlobalCatchup", true)
+		}
+	}
+
 	// 4. Persistence
 	gt.AddFlowsToInventory(companyId, totalFlow)
 	return totalFlow, nil
@@ -233,6 +246,19 @@ func (gt *GraphTraversal) ProcessMachine(machineId, requestedBy string, recursiv
 	if outputItem == "" {
 		gt.app.Logger().Info("[GRAPH] ProcessMachine: No output item", "machine", machineId)
 		return &NodeFlow{}, nil
+	}
+
+	// 1.5. Recursively Process Inputs (Pull Upstream)
+	// We must ensure that machines feeding this one are also processed,
+	// otherwise they might be dormant if not connected to company directly.
+	if recursive {
+		for _, edge := range gt.edgeCache[machineId] {
+			inputId := edge.GetString("input_id")
+			inputType := edge.GetString("input_type")
+			// We don't care about the return flow here (we rely on buffers),
+			// just trigger the processing so they produce.
+			gt.processNodeRecursive(inputId, inputType, machineId, true)
+		}
 	}
 
 	// 2. Calculate Theoretical Cycles (Time-based)

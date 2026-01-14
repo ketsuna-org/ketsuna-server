@@ -129,8 +129,9 @@ func (c *EdgeTransferCron) getSourceAvailable(nodeId, nodeType string) (string, 
 
 	case "machine":
 		// Get from machine's output buffer
+		// Sort by quantity descending to prioritize buffers that have items
 		buffers, err := c.app.FindRecordsByFilter("machine_buffers",
-			fmt.Sprintf("machine = '%s'", nodeId), "", 1, 0)
+			fmt.Sprintf("machine = '%s'", nodeId), "-quantity", 1, 0)
 		if err != nil || len(buffers) == 0 {
 			return "", 0
 		}
@@ -138,8 +139,9 @@ func (c *EdgeTransferCron) getSourceAvailable(nodeId, nodeType string) (string, 
 
 	case "storage":
 		// Get from storage's linked inventory
+		// Sort by quantity descending to prioritize inventories that have items
 		invs, err := c.app.FindRecordsByFilter("inventory",
-			fmt.Sprintf("linked_storage = '%s'", nodeId), "", 1, 0)
+			fmt.Sprintf("linked_storage = '%s'", nodeId), "-quantity", 1, 0)
 		if err != nil || len(invs) == 0 {
 			return "", 0
 		}
