@@ -1,11 +1,9 @@
 package hooks
 
 import (
-	"fmt"
 	"sync" // Added sync
 
 	"github.com/pocketbase/pocketbase"
-	"github.com/pocketbase/pocketbase/core"
 )
 
 // GraphHarvestInterval defines the time unit for mining rates (e.g., rate per 60 seconds)
@@ -41,48 +39,15 @@ func (g *GraphEconomy) CalculateCompanyInventory(companyId string) (map[string]f
 
 	gt := NewGraphTraversal(g.app)
 
-	// NOTE: TraverseStorages REMOVED - it caused double-processing
-	// Storage nodes are now processed naturally during TraverseGlobal via pull model
-	// Each storage pulls from upstream and adds to its buffer in a single pass
-
 	// Delegate to GraphTraversal for Global Pull
+	// NOTE: TraverseGlobal already commits flow to inventory via AddFlowsToInventory
+	// Do NOT add to inventory again here - that would cause double addition!
 	flow, err := gt.TraverseGlobal(companyId)
 	if err != nil {
 		g.app.Logger().Error("[GRAPH] Traversal failed", "companyId", companyId, "err", err)
 		return nil, err
 	}
 
-	// Commit the flow to company inventory
-	if len(flow) > 0 {
-		for itemId, qty := range flow {
-			// Find existing inventory
-			records, _ := g.app.FindRecordsByFilter(
-				"inventory",
-				fmt.Sprintf("company = '%s' && item_id = '%s'", companyId, itemId),
-				"",
-				1,
-				0,
-			)
-
-			var rec *core.Record
-			if len(records) > 0 {
-				rec = records[0]
-				newQty := rec.GetFloat("quantity") + qty
-				rec.Set("quantity", newQty)
-			} else {
-				// Create new
-				collection, _ := g.app.FindCollectionByNameOrId("inventory")
-				rec = core.NewRecord(collection)
-				rec.Set("company", companyId)
-				rec.Set("item_id", itemId)
-				rec.Set("quantity", qty)
-			}
-
-			if err := g.app.Save(rec); err != nil {
-				g.app.Logger().Error("[GRAPH] Failed to save inventory", "item", itemId, "err", err)
-			}
-		}
-	}
-
+	// Return flow for reporting purposes only (already persisted by TraverseGlobal)
 	return flow, nil
 }
