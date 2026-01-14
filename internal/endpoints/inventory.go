@@ -419,6 +419,110 @@ func registerInventoryEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, 
 		})
 	})
 
+	// GET /api/inventory/state - Read-only paginated inventory (no graph recompute)
+	// This is the lightweight alternative to /api/inventory/refresh
+	e.Router.GET("/api/inventory/state", func(c *core.RequestEvent) error {
+		authRecord := c.Auth
+		if authRecord == nil {
+			return apis.NewUnauthorizedError("Non connecté", nil)
+		}
+
+		companyId := authRecord.GetString("active_company")
+		if companyId == "" {
+			return apis.NewBadRequestError("Aucune entreprise active", nil)
+		}
+
+		// Parse query parameters
+		page := 1
+		perPage := 20
+		if p := c.Request.URL.Query().Get("page"); p != "" {
+			fmt.Sscanf(p, "%d", &page)
+		}
+		if pp := c.Request.URL.Query().Get("perPage"); pp != "" {
+			fmt.Sscanf(pp, "%d", &perPage)
+		}
+		if page < 1 {
+			page = 1
+		}
+		if perPage < 1 {
+			perPage = 20
+		}
+		if perPage > 100 {
+			perPage = 100 // Cap at 100 items per page
+		}
+
+		filterParam := c.Request.URL.Query().Get("filter")
+		sortParam := c.Request.URL.Query().Get("sort")
+		expandParam := c.Request.URL.Query().Get("expand")
+
+		// Build filter - always filter by company
+		filter := fmt.Sprintf("company = '%s'", companyId)
+		if filterParam != "" {
+			// Allow additional filtering (e.g., item_id, linked_storage)
+			filter = fmt.Sprintf("%s && (%s)", filter, filterParam)
+		}
+
+		// Default sort by item_id if not specified
+		if sortParam == "" {
+			sortParam = "item_id"
+		}
+
+		// Count total items first
+		allRecords, err := app.FindRecordsByFilter("inventory", filter, "", 0, 0)
+		if err != nil {
+			return apis.NewBadRequestError("Erreur lors de la récupération de l'inventaire", err)
+		}
+		totalItems := len(allRecords)
+		totalPages := (totalItems + perPage - 1) / perPage
+		if totalPages < 1 {
+			totalPages = 1
+		}
+
+		// Fetch paginated records
+		offset := (page - 1) * perPage
+		records, err := app.FindRecordsByFilter("inventory", filter, sortParam, perPage, offset)
+		if err != nil {
+			return apis.NewBadRequestError("Erreur lors de la récupération de l'inventaire", err)
+		}
+
+		// Build response items
+		items := make([]map[string]interface{}, 0, len(records))
+		for _, rec := range records {
+			item := map[string]interface{}{
+				"id":             rec.Id,
+				"company":        rec.GetString("company"),
+				"item_id":        rec.GetString("item_id"),
+				"quantity":       rec.GetFloat("quantity"),
+				"linked_storage": rec.GetString("linked_storage"),
+				"created":        rec.Created.String(),
+				"updated":        rec.Updated.String(),
+			}
+
+			// Handle expand parameter
+			if expandParam != "" && strings.Contains(expandParam, "linked_storage") {
+				storageId := rec.GetString("linked_storage")
+				if storageId != "" {
+					storage, err := app.FindRecordById("machines", storageId)
+					if err == nil {
+						item["expand"] = map[string]interface{}{
+							"linked_storage": storage,
+						}
+					}
+				}
+			}
+
+			items = append(items, item)
+		}
+
+		return c.JSON(200, map[string]interface{}{
+			"items":      items,
+			"page":       page,
+			"perPage":    perPage,
+			"totalItems": totalItems,
+			"totalPages": totalPages,
+		})
+	}).Bind(apis.RequireAuth())
+
 	// POST /api/inventory/refresh - Trigger lazy calculation and pull production into inventory
 	e.Router.POST("/api/inventory/refresh", func(c *core.RequestEvent) error {
 		authRecord := c.Auth
