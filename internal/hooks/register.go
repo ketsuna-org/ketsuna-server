@@ -63,12 +63,29 @@ func RegisterHooks(app *pocketbase.PocketBase, inv *InventoryLogic, eco *Economy
 	edgeTransfer := NewEdgeTransferCron(app)
 	app.OnServe().BindFunc(func(e *core.ServeEvent) error {
 		e.Router.POST("/api/factory/process", func(e *core.RequestEvent) error {
-			// Optional: Check if user is authenticated (e.Auth != nil)
-
-			// Run the transfer logic (same logic as before)
+			// 1. Run edge transfer logic (moves items along edges)
 			if err := edgeTransfer.TransferAll(); err != nil {
 				app.Logger().Error("[LAZY] Edge transfer failed", "err", err)
 				return e.BadRequestError("Transfer failed", err)
+			}
+
+			// 2. CRITICAL: Trigger production calculation for the user's company
+			// This makes machines actually produce items based on time elapsed
+			if e.Auth != nil {
+				companyId := e.Auth.GetString("active_company")
+				if companyId != "" {
+					producedItems, err := graph.CalculateCompanyInventory(companyId)
+					if err != nil {
+						app.Logger().Error("[LAZY] Production calculation failed", "company", companyId, "err", err)
+						// Don't fail the whole request, edge transfer already succeeded
+					} else {
+						app.Logger().Debug("[LAZY] Production completed", "company", companyId, "items", len(producedItems))
+						return e.JSON(200, map[string]interface{}{
+							"status":        "ok",
+							"producedItems": producedItems,
+						})
+					}
+				}
 			}
 
 			return e.JSON(200, map[string]string{"status": "ok"})
