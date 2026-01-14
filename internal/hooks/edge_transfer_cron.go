@@ -52,6 +52,13 @@ func (c *EdgeTransferCron) processEdge(edge *core.Record, now time.Time) error {
 		return nil // Invalid edge
 	}
 
+	// SKIP deposit→machine edges: Extractors handle deposit extraction directly
+	// in ProcessMachine via time-based production. Edge transfer is for:
+	// machine→machine, machine→storage, storage→company, etc.
+	if inputType == "deposit" && outputType == "machine" {
+		return nil
+	}
+
 	// Calculate time since last transfer
 	lastTransfer := edge.GetDateTime("last_transfer_at").Time()
 	if lastTransfer.IsZero() {

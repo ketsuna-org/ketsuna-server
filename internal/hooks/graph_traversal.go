@@ -414,19 +414,18 @@ func (gt *GraphTraversal) ProcessMachine(machineId, requestedBy string, recursiv
 
 			switch inputType {
 			case "deposit":
-				// Only Extractors (no recipe) can consume from Deposit
+				// Extractors (no recipe) consume directly from deposit
+				// EdgeTransferCron skips deposit→machine edges, so we handle it here
 				if activeRecipeId == "" {
 					deposit, err := gt.app.FindRecordById("deposits", inputId)
 					if err == nil {
 						curQty := deposit.GetFloat("quantity")
 
-						// PARTIAL EXTRACTION: Consume only what's available (min of totalProduced and curQty)
+						// PARTIAL EXTRACTION: Consume only what's available
 						consumed := totalProduced
 						if consumed > curQty {
 							consumed = curQty
-							// Adjust totalProduced to what was actually extracted
-							totalProduced = consumed
-							gt.app.Logger().Debug("[GRAPH] Extractor partial extraction", "machine", machineId, "deposit", inputId, "wanted", float64(maxCycles)*qtyPerCycle, "extracted", consumed)
+							totalProduced = consumed // Adjust production
 						}
 
 						newQty := curQty - consumed
@@ -438,23 +437,18 @@ func (gt *GraphTraversal) ProcessMachine(machineId, requestedBy string, recursiv
 
 						// DELETE DEPOSIT IF DEPLETED
 						if newQty <= 0 {
-							gt.app.Logger().Debug("[GRAPH] Deposit depleted, deleting", "deposit", inputId, "consumed", consumed)
+							gt.app.Logger().Debug("[GRAPH] Deposit depleted, deleting", "deposit", inputId)
 							if err := gt.app.Delete(deposit); err != nil {
-								gt.app.Logger().Error("[GRAPH] Failed to delete depleted deposit", "deposit", inputId, "err", err)
+								gt.app.Logger().Error("[GRAPH] Failed to delete depleted deposit", "err", err)
 							} else {
-								// Also delete the edge connecting to this deposit
-								if err := gt.app.Delete(edge); err != nil {
-									gt.app.Logger().Error("[GRAPH] Failed to delete edge to depleted deposit", "edge", edge.Id, "err", err)
-								}
+								gt.app.Delete(edge) // Delete edge too
 							}
 						} else {
 							gt.app.Save(deposit)
 						}
 
-						// Record consumption statistic
 						gt.recordStatistic(machine.GetString("company"), deposit.GetString("ressource_id"), "consumption", consumed)
-
-						gt.app.Logger().Debug("[GRAPH] Extractor Consumed from Deposit", "machine", machineId, "deposit", inputId, "consumed", consumed, "remaining", newQty)
+						gt.app.Logger().Debug("[GRAPH] Extractor consumed from deposit", "machine", machineId, "deposit", inputId, "consumed", consumed)
 					}
 				}
 			case "storage":
