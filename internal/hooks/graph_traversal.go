@@ -117,8 +117,10 @@ func (gt *GraphTraversal) TraverseGlobal(companyId string) (map[string]float64, 
 		}
 	}
 
-	// 4. Persistence
-	gt.AddFlowsToInventory(companyId, totalFlow)
+	// 4. Return flow for reporting (EdgeTransferCron handles actual inventory transfers)
+	// NOTE: Do NOT call AddFlowsToInventory here!
+	// EdgeTransferCron.TransferAll() already adds items to company inventory for machine→company edges.
+	// Adding here would cause DOUBLE inventory addition.
 	return totalFlow, nil
 }
 
