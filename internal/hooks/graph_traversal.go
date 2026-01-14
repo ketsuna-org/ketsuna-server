@@ -275,7 +275,17 @@ func (gt *GraphTraversal) ProcessMachine(machineId, requestedBy string, recursiv
 	}
 
 	delta := time.Since(startedAt).Seconds()
-	cycleTime := float64(itemDef.ProductionTime)
+
+	// Determine cycle time: use recipe time for recipe machines, itemDef for extractors
+	var cycleTime float64
+	if activeRecipeId != "" {
+		if r := gamedata.GetRecipe(activeRecipeId); r != nil && r.ProductionTime > 0 {
+			cycleTime = float64(r.ProductionTime)
+		}
+	}
+	if cycleTime <= 0 {
+		cycleTime = float64(itemDef.ProductionTime)
+	}
 	if cycleTime <= 0 {
 		cycleTime = 60
 	}
@@ -394,8 +404,17 @@ func (gt *GraphTraversal) ProcessMachine(machineId, requestedBy string, recursiv
 		return &NodeFlow{ItemID: outputItem}, nil
 	}
 
-	// 5. Commit Production & Consume Inputs (Active Extraction)
-	qtyPerCycle := float64(itemDef.ProductQuantity)
+	// 5. Commit Production & Consume Inputs
+	// Use recipe output quantity for recipe machines, itemDef for extractors
+	var qtyPerCycle float64
+	if activeRecipeId != "" {
+		if r := gamedata.GetRecipe(activeRecipeId); r != nil && r.OutputQuantity > 0 {
+			qtyPerCycle = float64(r.OutputQuantity)
+		}
+	}
+	if qtyPerCycle <= 0 {
+		qtyPerCycle = float64(itemDef.ProductQuantity)
+	}
 	if qtyPerCycle <= 0 {
 		qtyPerCycle = 1
 	}
