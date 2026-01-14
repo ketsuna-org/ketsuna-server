@@ -494,8 +494,8 @@ func registerInventoryEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, 
 				"item_id":        rec.GetString("item_id"),
 				"quantity":       rec.GetFloat("quantity"),
 				"linked_storage": rec.GetString("linked_storage"),
-				"created":        rec.Created.String(),
-				"updated":        rec.Updated.String(),
+				"created":        rec.GetDateTime("created").String(),
+				"updated":        rec.GetDateTime("updated").String(),
 			}
 
 			// Handle expand parameter
