@@ -29,14 +29,24 @@ func (c *EdgeTransferCron) TransferAll() error {
 		return fmt.Errorf("failed to fetch edges: %w", err)
 	}
 
+	c.app.Logger().Debug("[EDGE_TRANSFER] Starting transfer", "edgeCount", len(edges))
+
 	now := time.Now()
+	processed := 0
 
 	for _, edge := range edges {
+		inputType := edge.GetString("input_type")
+		outputType := edge.GetString("output_type")
+		c.app.Logger().Debug("[EDGE_TRANSFER] Processing edge", "edge", edge.Id, "inputType", inputType, "outputType", outputType)
+
 		if err := c.processEdge(edge, now); err != nil {
 			c.app.Logger().Error("[EDGE_TRANSFER] Failed to process edge", "edge", edge.Id, "err", err)
-			// Continue processing other edges
+		} else {
+			processed++
 		}
 	}
+
+	c.app.Logger().Debug("[EDGE_TRANSFER] Completed", "processed", processed, "total", len(edges))
 
 	return nil
 }
@@ -79,9 +89,12 @@ func (c *EdgeTransferCron) processEdge(edge *core.Record, now time.Time) error {
 	sourceItem, sourceQty := c.getSourceAvailable(inputId, inputType)
 	if sourceItem == "" || sourceQty <= 0 {
 		// No items to transfer, but still update timestamp to prevent time accumulation
+		c.app.Logger().Debug("[EDGE_TRANSFER] No source items", "edge", edge.Id, "inputType", inputType, "inputId", inputId, "sourceItem", sourceItem, "sourceQty", sourceQty)
 		edge.Set("last_transfer_at", now)
 		return c.app.Save(edge)
 	}
+
+	c.app.Logger().Debug("[EDGE_TRANSFER] Source available", "edge", edge.Id, "item", sourceItem, "qty", sourceQty, "theoretical", theoreticalTransfer)
 
 	// Get available space in target
 	targetSpace := c.getTargetSpace(outputId, outputType, sourceItem)
