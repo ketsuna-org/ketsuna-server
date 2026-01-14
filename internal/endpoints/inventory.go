@@ -69,6 +69,96 @@ func registerInventoryEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, 
 		})
 	})
 
+	// POST /api/inventory/sell-bulk - Sell multiple items in one request
+	e.Router.POST("/api/inventory/sell-bulk", func(c *core.RequestEvent) error {
+		authRecord := c.Auth
+		if authRecord == nil {
+			return apis.NewUnauthorizedError("Vous devez être connecté.", nil)
+		}
+
+		body := struct {
+			StorageId string `json:"storageId" form:"storageId"`
+			Items     []struct {
+				ItemId   string  `json:"itemId" form:"itemId"`
+				Quantity float64 `json:"quantity" form:"quantity"`
+			} `json:"items" form:"items"`
+		}{}
+
+		if err := c.BindBody(&body); err != nil {
+			return apis.NewBadRequestError("Corps JSON invalide", err)
+		}
+
+		if len(body.Items) == 0 {
+			return apis.NewBadRequestError("Aucun item à vendre", nil)
+		}
+
+		companyId := authRecord.GetString("active_company")
+		if companyId == "" {
+			return apis.NewBadRequestError("Aucune entreprise active pour cet utilisateur", nil)
+		}
+
+		// Keep same behavior as single sell: no pre-refresh, operate in a transaction
+		return app.RunInTransaction(func(txApp core.App) error {
+			company, err := txApp.FindRecordById("companies", companyId)
+			if err != nil {
+				return apis.NewBadRequestError("Entreprise introuvable", nil)
+			}
+			if company.GetString("ceo") != authRecord.Id {
+				return apis.NewForbiddenError("Accès refusé", nil)
+			}
+
+			successes := make([]map[string]interface{}, 0)
+			failures := make([]map[string]interface{}, 0)
+			totalRevenue := 0.0
+
+			for _, item := range body.Items {
+				if item.ItemId == "" || item.Quantity <= 0 {
+					failures = append(failures, map[string]interface{}{
+						"itemId":   item.ItemId,
+						"quantity": item.Quantity,
+						"error":    "itemId et quantity > 0 requis",
+					})
+					continue
+				}
+
+				qty := int(item.Quantity)
+				result, sellErr := inv.SellInventory(txApp, companyId, item.ItemId, qty, body.StorageId)
+				if sellErr != nil {
+					failures = append(failures, map[string]interface{}{
+						"itemId":   item.ItemId,
+						"quantity": qty,
+						"error":    sellErr.Error(),
+					})
+					continue
+				}
+
+				totalRevenue += result.Revenue
+				successes = append(successes, map[string]interface{}{
+					"itemId":        item.ItemId,
+					"quantity":      qty,
+					"revenue":       result.Revenue,
+					"unitSellPrice": result.UnitSellPrice,
+				})
+			}
+
+			if len(successes) == 0 {
+				errMsg := "Aucune vente réalisée"
+				if len(failures) > 0 {
+					errMsg = fmt.Sprintf("Aucune vente réalisée: %v", failures[0]["error"])
+				}
+				return apis.NewBadRequestError(errMsg, nil)
+			}
+
+			return c.JSON(200, map[string]interface{}{
+				"success":      true,
+				"storageId":    body.StorageId,
+				"totalRevenue": totalRevenue,
+				"itemsSold":    successes,
+				"failures":     failures,
+			})
+		})
+	})
+
 	// POST /api/inventory/purchase - Buy items from market
 	e.Router.POST("/api/inventory/purchase", func(c *core.RequestEvent) error {
 		authRecord := c.Auth

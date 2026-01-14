@@ -13,7 +13,7 @@ import (
 // registerStatisticsEndpoints handles /api/company/statistics
 func registerStatisticsEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent) {
 
-	// GET /api/company/statistics?period=1m|10m|1h|10h
+	// GET /api/company/statistics?period=1m|10m|1h|10h|24h|all
 	e.Router.GET("/api/company/statistics", func(c *core.RequestEvent) error {
 		authRecord := c.Auth
 		if authRecord == nil {
@@ -32,6 +32,7 @@ func registerStatisticsEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent)
 		}
 
 		var duration time.Duration
+		allPeriod := false
 		switch period {
 		case "1m":
 			duration = 1 * time.Minute
@@ -43,18 +44,40 @@ func registerStatisticsEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent)
 			duration = 10 * time.Hour
 		case "24h":
 			duration = 24 * time.Hour
+		case "all":
+			allPeriod = true
 		default:
 			duration = 10 * time.Minute
 		}
 
-		cutoffTime := time.Now().Add(-duration)
-		cutoffStr := cutoffTime.UTC().Format("2006-01-02 15:04:05.000Z")
+		var records []*core.Record
+		var err error
 
-		// Fetch statistics from the collection
-		filter := fmt.Sprintf("company = '%s' && created >= '%s'", companyId, cutoffStr)
-		records, err := app.FindRecordsByFilter("company_statistics", filter, "-created", 1000, 0)
-		if err != nil {
-			return apis.NewBadRequestError("Erreur lors de la récupération des statistiques", err)
+		if allPeriod {
+			filter := fmt.Sprintf("company = '%s'", companyId)
+
+			// Fetch all records in batches to avoid missing older history
+			const batchSize = 500
+			for offset := 0; ; offset += batchSize {
+				batch, batchErr := app.FindRecordsByFilter("company_statistics", filter, "-created", batchSize, offset)
+				if batchErr != nil {
+					return apis.NewBadRequestError("Erreur lors de la récupération des statistiques", batchErr)
+				}
+
+				records = append(records, batch...)
+				if len(batch) < batchSize {
+					break
+				}
+			}
+		} else {
+			cutoffTime := time.Now().Add(-duration)
+			cutoffStr := cutoffTime.UTC().Format("2006-01-02 15:04:05.000Z")
+
+			filter := fmt.Sprintf("company = '%s' && created >= '%s'", companyId, cutoffStr)
+			records, err = app.FindRecordsByFilter("company_statistics", filter, "-created", 1000, 0)
+			if err != nil {
+				return apis.NewBadRequestError("Erreur lors de la récupération des statistiques", err)
+			}
 		}
 
 		// Aggregate by item_id and event_type
@@ -82,6 +105,19 @@ func registerStatisticsEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent)
 
 		// Calculate rates per minute
 		durationMinutes := duration.Minutes()
+		if allPeriod {
+			durationMinutes = 1
+			if len(records) > 0 {
+				oldest := records[len(records)-1].GetDateTime("created")
+				span := time.Since(oldest.Time()).Minutes()
+				if span > 0 {
+					durationMinutes = span
+				}
+			}
+		}
+		if durationMinutes <= 0 {
+			durationMinutes = 1
+		}
 
 		// Build production array
 		production := make([]map[string]interface{}, 0)
