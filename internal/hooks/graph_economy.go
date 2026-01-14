@@ -40,8 +40,7 @@ func (g *GraphEconomy) CalculateCompanyInventory(companyId string) (map[string]f
 	gt := NewGraphTraversal(g.app)
 
 	// Delegate to GraphTraversal for Global Pull
-	// NOTE: TraverseGlobal already commits flow to inventory via AddFlowsToInventory
-	// Do NOT add to inventory again here - that would cause double addition!
+	// TraverseGlobal consumes from buffers and adds the consumed items to company inventory
 	flow, err := gt.TraverseGlobal(companyId)
 	if err != nil {
 		g.app.Logger().Error("[GRAPH] Traversal failed", "companyId", companyId, "err", err)

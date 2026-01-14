@@ -117,10 +117,14 @@ func (gt *GraphTraversal) TraverseGlobal(companyId string) (map[string]float64, 
 		}
 	}
 
-	// 4. Return flow for reporting (EdgeTransferCron handles actual inventory transfers)
-	// NOTE: Do NOT call AddFlowsToInventory here!
-	// EdgeTransferCron.TransferAll() already adds items to company inventory for machine→company edges.
-	// Adding here would cause DOUBLE inventory addition.
+	// 4. Add consumed flows to company inventory
+	// TraverseGlobal consumes from storage/machine buffers, so we must add to inventory here
+	if len(totalFlow) > 0 {
+		if err := gt.AddFlowsToInventory(companyId, totalFlow); err != nil {
+			gt.app.Logger().Error("[GRAPH] Failed to add flows to inventory", "err", err)
+		}
+	}
+
 	return totalFlow, nil
 }
 
