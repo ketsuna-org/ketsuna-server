@@ -58,3 +58,4 @@ server
 pb_data/auxiliary.db*
 pb_hooks/
 pb_migrations/
+pb_public/icons_clean

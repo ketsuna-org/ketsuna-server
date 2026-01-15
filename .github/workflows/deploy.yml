@@ -29,6 +29,13 @@ jobs:
           path: pocketbase
           retention-days: 1
 
+      - name: Upload Icons
+        uses: actions/upload-artifact@v4
+        with:
+          name: icons
+          path: pb_public/icons/
+          retention-days: 1
+
   deploy:
     name: Deploy (Self Hosted)
     needs: build
@@ -39,12 +46,22 @@ jobs:
         with:
           name: pocketbase-binary
 
+      - name: Download Icons
+        uses: actions/download-artifact@v4
+        with:
+          name: icons
+          path: icons
+
       - name: Install & Restart
         run: |
           # The binary is downloaded to the current workspace directory
           # Move it to the target location
           mv -f pocketbase /home/orangepi/pocketbase/pocketbase
           chmod +x /home/orangepi/pocketbase/pocketbase
+
+          # Deploy icons to pb_public/icons/
+          mkdir -p /home/orangepi/pocketbase/pb_public/icons
+          cp -rf icons/* /home/orangepi/pocketbase/pb_public/icons/
 
           echo "Restarting service..."
           echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S systemctl restart pocketbase
