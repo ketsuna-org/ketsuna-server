@@ -424,4 +424,66 @@ func registerMachineEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent) {
 			})
 		})
 	})
+
+	// POST /api/machines/sell - Sell a machine for 1$ (permanently removes it)
+	e.Router.POST("/api/machines/sell", func(c *core.RequestEvent) error {
+		authRecord := c.Auth
+		if authRecord == nil {
+			return apis.NewUnauthorizedError("Non connecté", nil)
+		}
+
+		type req struct {
+			MachineId string `json:"machineId"`
+		}
+		var data req
+		if err := c.BindBody(&data); err != nil {
+			return apis.NewBadRequestError("Données invalides", err)
+		}
+
+		if data.MachineId == "" {
+			return apis.NewBadRequestError("machineId requis", nil)
+		}
+
+		machine, err := app.FindRecordById("machines", data.MachineId)
+		if err != nil {
+			return apis.NewBadRequestError("Machine introuvable", err)
+		}
+
+		companyId := authRecord.GetString("active_company")
+		if machine.GetString("company") != companyId {
+			return apis.NewForbiddenError("Cette machine ne vous appartient pas", nil)
+		}
+
+		return app.RunInTransaction(func(txApp core.App) error {
+			// 1. Delete all edges connected to this machine
+			edges, _ := txApp.FindRecordsByFilter("edge_relation",
+				fmt.Sprintf("input_id = '%s' || output_id = '%s'", data.MachineId, data.MachineId),
+				"", 0, 0)
+			for _, edge := range edges {
+				txApp.Delete(edge)
+			}
+
+			// 2. Delete the machine record
+			if err := txApp.Delete(machine); err != nil {
+				return apis.NewBadRequestError("Erreur lors de la suppression", err)
+			}
+
+			// 3. Add +1$ to company balance
+			company, err := txApp.FindRecordById("companies", companyId)
+			if err != nil {
+				return apis.NewBadRequestError("Entreprise introuvable", err)
+			}
+			currentBalance := company.GetFloat("balance")
+			company.Set("balance", currentBalance+1)
+			if err := txApp.Save(company); err != nil {
+				return apis.NewBadRequestError("Erreur mise à jour solde", err)
+			}
+
+			return c.JSON(200, map[string]interface{}{
+				"success":    true,
+				"message":    "Machine vendue pour 1 ₭",
+				"newBalance": currentBalance + 1,
+			})
+		})
+	})
 }
