@@ -197,3 +197,63 @@ func CleanupDuplicateDepositEdges(app *pocketbase.PocketBase) {
 		app.Logger().Debug("[CLEANUP] Removed duplicate deposit edges", "count", deletedCount)
 	}
 }
+
+// CleanupDepositEmployeeAssignments removes all employee-to-deposit assignments
+// and resets deposit harvested/last_harvest_at fields since employees are no longer used for mining
+func CleanupDepositEmployeeAssignments(app *pocketbase.PocketBase) {
+	// 1. Clear deposit field from all employees
+	employees, err := app.FindRecordsByFilter("employees", "deposit != ''", "", 0, 0)
+	if err != nil {
+		app.Logger().Error("[CLEANUP] Failed to fetch employees with deposit assignment", "err", err)
+		return
+	}
+
+	unassignedCount := 0
+	for _, employee := range employees {
+		employee.Set("deposit", "")
+		if err := app.Save(employee); err != nil {
+			app.Logger().Error("[CLEANUP] Failed to clear deposit from employee", "employeeId", employee.Id, "err", err)
+		} else {
+			unassignedCount++
+		}
+	}
+
+	if unassignedCount > 0 {
+		app.Logger().Debug("[CLEANUP] Unassigned employees from deposits", "count", unassignedCount)
+	}
+
+	// 2. Reset harvested and last_harvest_at on all deposits
+	deposits, err := app.FindRecordsByFilter("deposits", "", "", 0, 0)
+	if err != nil {
+		app.Logger().Error("[CLEANUP] Failed to fetch deposits", "err", err)
+		return
+	}
+
+	resetCount := 0
+	for _, deposit := range deposits {
+		wasModified := false
+
+		if deposit.GetFloat("harvested") != 0 {
+			deposit.Set("harvested", 0)
+			wasModified = true
+		}
+
+		if !deposit.GetDateTime("last_harvest_at").Time().IsZero() {
+			// Reset to zero time
+			deposit.Set("last_harvest_at", nil)
+			wasModified = true
+		}
+
+		if wasModified {
+			if err := app.Save(deposit); err != nil {
+				app.Logger().Error("[CLEANUP] Failed to reset deposit fields", "depositId", deposit.Id, "err", err)
+			} else {
+				resetCount++
+			}
+		}
+	}
+
+	if resetCount > 0 {
+		app.Logger().Debug("[CLEANUP] Reset harvested/last_harvest_at on deposits", "count", resetCount)
+	}
+}

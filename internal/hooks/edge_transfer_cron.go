@@ -204,20 +204,15 @@ func (c *EdgeTransferCron) getTargetSpace(nodeId, nodeType, itemId string) float
 
 // deductFromSource removes items from the source node
 func (c *EdgeTransferCron) deductFromSource(nodeId, nodeType, itemId string, qty float64) error {
-	switch nodeType {
-	case "deposit":
-		deposit, err := c.app.FindRecordById("deposits", nodeId)
-		if err != nil {
-			return err
-		}
-		newQty := deposit.GetFloat("quantity") - qty
-		if newQty <= 0 {
-			// Deposit depleted - delete it
-			return c.app.Delete(deposit)
-		}
-		deposit.Set("quantity", math.Round(newQty))
-		return c.app.Save(deposit)
+	// GUARD: Deposits should NEVER be deducted from via direct edge transfer
+	// Deposits are only consumed by ProcessMachine via direct quantity access
+	if nodeType == "deposit" {
+		c.app.Logger().Error("[EDGE_TRANSFER] CRITICAL: Attempted direct deposit transfer - should not occur",
+			"depositId", nodeId, "itemId", itemId, "qty", qty)
+		return fmt.Errorf("deposit transfer should not occur - deposits are extracted by machines directly, not via edges")
+	}
 
+	switch nodeType {
 	case "machine":
 		buffers, err := c.app.FindRecordsByFilter("machine_buffers",
 			fmt.Sprintf("machine = '%s' && item_id = '%s'", nodeId, itemId), "", 1, 0)

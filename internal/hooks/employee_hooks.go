@@ -28,13 +28,13 @@ func registerEmployeeHooks(app *pocketbase.PocketBase) {
 			}
 		}
 
-		// Check deposit assignment conflict
-		newDeposit := e.Record.GetString("deposit")
-		if newDeposit != "" {
-			// Ensure not assigned to any machine
-			found, err := app.FindRecordsByFilter("machines", fmt.Sprintf("employees ~ '%s'", e.Record.Id), "", 1, 0)
-			if err == nil && len(found) > 0 {
-				return apis.NewBadRequestError("Cet employé est assigné à une machine. Retirez-le de la machine avant de l'assigner à un gisement.", nil)
+		// Check machine assignment conflict (deposits are no longer used for mining)
+		newMachine := e.Record.GetString("machine")
+		if newMachine != "" {
+			// Ensure not assigned to exploration
+			explorationId := e.Record.GetString("exploration")
+			if explorationId != "" {
+				return apis.NewBadRequestError("Cet employé est assigné à une exploration. Retirez-le avant de l'assigner à une machine.", nil)
 			}
 		}
 

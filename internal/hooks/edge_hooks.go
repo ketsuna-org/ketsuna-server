@@ -44,7 +44,24 @@ func RegisterEdgeRelationHooks(app *pocketbase.PocketBase) {
 		outputId := e.Record.GetString("output_id")
 		inputId := e.Record.GetString("input_id")
 
-		// Constraint: Machine can only have ONE deposit input
+		// FORBIDDEN EDGES: Enforce system constraints
+		// 1. Company cannot be a SOURCE (input_type = "company" is invalid)
+		if inputType == "company" {
+			return apis.NewBadRequestError("L'entreprise ne peut pas être source d'une connexion. Les connexions doivent aller VERS l'entreprise, pas depuis.", nil)
+		}
+
+		// 2. Deposit cannot connect directly to Company (must go through machines)
+		if inputType == "deposit" && outputType == "company" {
+			return apis.NewBadRequestError("Les gisements ne peuvent pas être connectés directement à l'entreprise. Connectez d'abord à une machine extractrice, puis au stockage.", nil)
+		}
+
+		// 3. Deposit cannot connect directly to Storage (must go through machines)
+		if inputType == "deposit" && outputType == "storage" {
+			return apis.NewBadRequestError("Les gisements ne peuvent pas être connectés directement au stockage. Connectez d'abord à une machine extractrice.", nil)
+		}
+
+		// VALID EDGES: Allow and validate specific connections
+		// 4. Deposit -> Machine (extractor)
 		if inputType == "deposit" && outputType == "machine" {
 			// 0. CHECK COMPATIBILITY
 			machine, err := e.App.FindRecordById("machines", outputId)

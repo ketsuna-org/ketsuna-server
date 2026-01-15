@@ -84,16 +84,13 @@ func registerWorkshopEndpoints(app *pocketbase.PocketBase, e *core.ServeEvent, i
 		}
 
 		return app.RunInTransaction(func(txApp core.App) error {
-			count, err := hooks.AutoAssignDeposits(txApp, companyId)
-			if err != nil {
-				app.Logger().Error("[WORKSHOP] Auto-assign error", "error", err)
-				return apis.NewBadRequestError("Erreur lors de l'assignation automatique", err)
-			}
-
+			// AutoAssignDeposits has been removed - deposits are no longer used for mining.
+			// Deposit-to-machine connections now use edge_relation exclusively.
+			// No automatic assignment needed.
 			return c.JSON(200, map[string]interface{}{
 				"success":       true,
-				"assignedCount": count,
-				"message":       "Assignation terminée",
+				"assignedCount": 0,
+				"message":       "Assignation automatique n'est plus disponible. Utilisez les edges pour connecter les machines aux gisements.",
 			})
 		})
 	})

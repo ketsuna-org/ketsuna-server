@@ -49,6 +49,9 @@ func RegisterHooks(app *pocketbase.PocketBase, inv *InventoryLogic, eco *Economy
 		// Enforce constraint: Remove duplicate deposit -> machine edges
 		CleanupDuplicateDepositEdges(app)
 
+		// Cleanup deposit employee assignments (employees no longer used for mining)
+		CleanupDepositEmployeeAssignments(app)
+
 		return e.Next()
 	})
 
