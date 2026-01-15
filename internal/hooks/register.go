@@ -2,8 +2,29 @@ package hooks
 
 import (
 	"github.com/pocketbase/pocketbase"
+	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 )
+
+// ValidateCompanyOwnership checks if the provided authId is the CEO of the specified company.
+// Caller is responsible for handling superuser bypass before calling this function.
+func ValidateCompanyOwnership(app core.App, authId string, companyId string) error {
+	if authId == "" {
+		return apis.NewForbiddenError("Authentification requise", nil)
+	}
+	if companyId == "" {
+		return apis.NewBadRequestError("ID de compagnie manquant", nil)
+	}
+
+	company, err := app.FindRecordById("companies", companyId)
+	if err != nil {
+		return apis.NewBadRequestError("Entreprise introuvable", nil)
+	}
+	if company.GetString("ceo") != authId {
+		return apis.NewForbiddenError("Vous n'êtes pas autorisé à modifier cette entreprise", nil)
+	}
+	return nil
+}
 
 // package-local RNG (preferred over global rand.Seed as of Go 1.20)
 // var rng = rand.New(rand.NewSource(time.Now().UnixNano()))

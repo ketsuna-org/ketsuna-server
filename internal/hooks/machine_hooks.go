@@ -107,17 +107,43 @@ func registerMachineHooks(app *pocketbase.PocketBase, inv *InventoryLogic, _ *Gr
 		return e.Next()
 	})
 
-	// REMOVED: OnRecordUpdateRequest validation for employees.
-	// Since machines no longer have 'employees' field, this hook serves no purpose for employee validation.
-	// If other updates need validation, add them here.
-	// app.OnRecordUpdateRequest("machines").BindFunc(...)
+	// SECURITY: Validate ownership before update
+	app.OnRecordUpdateRequest("machines").BindFunc(func(e *core.RecordRequestEvent) error {
+		record := e.Record
+		original := record.Original()
+
+		companyId := original.GetString("company")
+
+		// Prevent transferring machines between companies
+		if record.GetString("company") != companyId {
+			return apis.NewBadRequestError("Transfert de machine interdit", nil)
+		}
+
+		// Validate ownership (bypass for superuser)
+		if e.Auth == nil || !e.Auth.IsSuperuser() {
+			if err := ValidateCompanyOwnership(e.App, e.Auth.Id, companyId); err != nil {
+				return err
+			}
+		}
+
+		// Protect critical fields from modification
+		record.Set("machine_id", original.GetString("machine_id"))
+		record.Set("company", original.GetString("company"))
+
+		return e.Next()
+	})
 
 	app.OnRecordDeleteRequest("machines").BindFunc(func(e *core.RecordRequestEvent) error {
-		if e.Auth != nil && e.Auth.IsSuperuser() {
-			return e.Next()
-		}
 		record := e.Record
 		companyId := record.GetString("company")
+
+		// SECURITY: Validate ownership (bypass for superuser)
+		if e.Auth == nil || !e.Auth.IsSuperuser() {
+			if err := ValidateCompanyOwnership(e.App, e.Auth.Id, companyId); err != nil {
+				return err
+			}
+		}
+
 		machineItemId := record.GetString("machine_id")
 		if companyId != "" && machineItemId != "" {
 			if err := inv.UpdateInventory(app, companyId, machineItemId, 1); err != nil {

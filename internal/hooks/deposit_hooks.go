@@ -22,6 +22,15 @@ func registerDepositHooks(app *pocketbase.PocketBase) {
 			return err
 		}
 
+		companyId := originalRecord.GetString("company")
+
+		// SECURITY: Validate ownership (bypass for superuser)
+		if e.Auth == nil || !e.Auth.IsSuperuser() {
+			if err := ValidateCompanyOwnership(e.App, e.Auth.Id, companyId); err != nil {
+				return err
+			}
+		}
+
 		// 1. Check Quantity (Disabled for debugging backend updates)
 		// if newRecord.GetInt("quantity") != originalRecord.GetInt("quantity") {
 		// 	return apis.NewBadRequestError("Modification de la quantité interdite.", nil)

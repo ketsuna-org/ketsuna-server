@@ -37,6 +37,51 @@ func RegisterEdgeRelationHooks(app *pocketbase.PocketBase) {
 		return e.Next()
 	})
 
+	// SECURITY: Validate ownership before creation request
+	app.OnRecordCreateRequest("edge_relation").BindFunc(func(e *core.RecordRequestEvent) error {
+		inputType := e.Record.GetString("input_type")
+		outputType := e.Record.GetString("output_type")
+		outputId := e.Record.GetString("output_id")
+		inputId := e.Record.GetString("input_id")
+
+		// Find the company_id from the nodes being connected
+		var companyId string
+
+		// Try to get company from input node
+		if inputType == "machine" || inputType == "storage" {
+			machine, err := e.App.FindRecordById("machines", inputId)
+			if err == nil {
+				companyId = machine.GetString("company")
+			}
+		} else if inputType == "deposit" {
+			deposit, err := e.App.FindRecordById("deposits", inputId)
+			if err == nil {
+				companyId = deposit.GetString("company")
+			}
+		}
+
+		// If not found via input, try via output node
+		if companyId == "" {
+			if outputType == "machine" || outputType == "storage" {
+				machine, err := e.App.FindRecordById("machines", outputId)
+				if err == nil {
+					companyId = machine.GetString("company")
+				}
+			} else if outputType == "company" {
+				companyId = outputId
+			}
+		}
+
+		// Validate ownership (bypass for superuser)
+		if e.Auth == nil || !e.Auth.IsSuperuser() {
+			if err := ValidateCompanyOwnership(e.App, e.Auth.Id, companyId); err != nil {
+				return err
+			}
+		}
+
+		return e.Next()
+	})
+
 	// Validate BEFORE creation: Constraint check
 	app.OnRecordCreate("edge_relation").BindFunc(func(e *core.RecordEvent) error {
 		inputType := e.Record.GetString("input_type")
@@ -119,6 +164,90 @@ func RegisterEdgeRelationHooks(app *pocketbase.PocketBase) {
 				e.App.Logger().Debug("[EDGE_HOOK] Updated machine deposit", "machineId", outputId, "newDepositId", inputId)
 			}
 		}
+		return e.Next()
+	})
+
+	// SECURITY: Validate ownership before delete
+	app.OnRecordDeleteRequest("edge_relation").BindFunc(func(e *core.RecordRequestEvent) error {
+		record := e.Record
+
+		// Find the company_id from the edge being deleted
+		var companyId string
+
+		inputType := record.GetString("input_type")
+		inputId := record.GetString("input_id")
+		outputType := record.GetString("output_type")
+		outputId := record.GetString("output_id")
+
+		// Try to get company from input node
+		if inputType == "machine" || inputType == "storage" {
+			machine, err := e.App.FindRecordById("machines", inputId)
+			if err == nil {
+				companyId = machine.GetString("company")
+			}
+		} else if inputType == "deposit" {
+			deposit, err := e.App.FindRecordById("deposits", inputId)
+			if err == nil {
+				companyId = deposit.GetString("company")
+			}
+		}
+
+		// If not found via input, try via output node
+		if companyId == "" {
+			if outputType == "machine" || outputType == "storage" {
+				machine, err := e.App.FindRecordById("machines", outputId)
+				if err == nil {
+					companyId = machine.GetString("company")
+				}
+			} else if outputType == "company" {
+				companyId = outputId
+			}
+		}
+
+		// Validate ownership (bypass for superuser)
+		if e.Auth == nil || !e.Auth.IsSuperuser() {
+			if err := ValidateCompanyOwnership(e.App, e.Auth.Id, companyId); err != nil {
+				return err
+			}
+		}
+
+		return e.Next()
+	})
+
+	// SECURITY: Validate ownership before update
+	app.OnRecordUpdateRequest("edge_relation").BindFunc(func(e *core.RecordRequestEvent) error {
+		record := e.Record
+		original := record.Original()
+
+		// Prevent transferring edges between companies
+		// (edges should not have a company field, but validate via related nodes)
+
+		// Find the company_id from the edge nodes
+		var companyId string
+
+		inputType := original.GetString("input_type")
+		inputId := original.GetString("input_id")
+
+		// Get company from input node
+		if inputType == "machine" || inputType == "storage" {
+			machine, err := e.App.FindRecordById("machines", inputId)
+			if err == nil {
+				companyId = machine.GetString("company")
+			}
+		} else if inputType == "deposit" {
+			deposit, err := e.App.FindRecordById("deposits", inputId)
+			if err == nil {
+				companyId = deposit.GetString("company")
+			}
+		}
+
+		// Validate ownership (bypass for superuser)
+		if e.Auth == nil || !e.Auth.IsSuperuser() {
+			if err := ValidateCompanyOwnership(e.App, e.Auth.Id, companyId); err != nil {
+				return err
+			}
+		}
+
 		return e.Next()
 	})
 
