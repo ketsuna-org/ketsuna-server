@@ -36,7 +36,6 @@ type MachineMetadata struct {
 	ProductionTime        int        `json:"production_time,omitempty"`         // Seconds per production cycle
 	MaxEmployee           int        `json:"max_employee,omitempty"`            // Max workers assignable
 	MaxMaintenance        int        `json:"max_maintenance,omitempty"`         // Max maintenance workers (default 1)
-	NeedEnergy            float64    `json:"need_energy,omitempty"`             // Energy required to operate
 	EnergyType            EnergyType `json:"energy_type,omitempty"`             // Energy source type
 	DurabilityPerCycle    float64    `json:"durability_per_cycle,omitempty"`    // Durability loss per cycle (default 1)
 	ProduceEnergy         float64    `json:"produce_energy,omitempty"`          // For generators: energy produced
@@ -69,7 +68,6 @@ type Item struct {
 	ProduceEnergy   float64    `json:"produce_energy,omitempty"`
 	CanConsume      []string   `json:"can_consume,omitempty"`
 	CanStoreEnergy  float64    `json:"can_store_energy,omitempty"`
-	NeedEnergy      float64    `json:"need_energy,omitempty"`
 	EnergyType      EnergyType `json:"energy_type,omitempty"`
 	// New: Structured metadata for machines
 	Metadata *MachineMetadata `json:"metadata,omitempty"`
@@ -543,7 +541,7 @@ var Items = map[string]Item{
 		ID: "hightech_factory", Name: "Usine High-Tech", Type: ItemTypeMachine, Unit: UnitUnit,
 		MarketAvailable: true,
 		BasePrice:       250000, UseRecipe: "smartphone_recipe", ProductionTime: 600,
-		MaxEmployee: 12, NeedEnergy: 200, EnergyType: EnergyTypeManuel, Icon: "🏢",
+		MaxEmployee: 12, EnergyType: EnergyTypeManuel, Icon: "🏢",
 		Description:  "Complexe industriel ultra-propre conçu pour l'assemblage de produits électroniques grand public.",
 		StrategicTip: "C'est ici que vous générez vos plus gros profits avec les smartphones. Optimisez l'approvisionnement en processeurs et verre.",
 	},
@@ -554,7 +552,7 @@ var Items = map[string]Item{
 	"carbonization_furnace": {
 		ID: "carbonization_furnace", Name: "Four de Carbonisation", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 120000, UseRecipe: "carbon_fiber_recipe", ProductionTime: 180,
-		MaxEmployee: 4, NeedEnergy: 80, EnergyType: EnergyTypeManuel, Icon: "🖤",
+		MaxEmployee: 4, EnergyType: EnergyTypeManuel, Icon: "🖤",
 		MarketAvailable: true,
 		Description:     "Four spécialisé traitant les polymères à haute température sous atmosphère contrôlée pour produire de la fibre de carbone.",
 		StrategicTip:    "Surveillez votre stock de plastique. Un four de carbonisation à l'arrêt peut retarder tout votre programme aérospatial.",
@@ -563,7 +561,7 @@ var Items = map[string]Item{
 		ID: "ceramic_kiln", Name: "Four à Céramique", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 80000, UseRecipe: "ceramic_recipe", ProductionTime: 120,
 		MarketAvailable: true,
-		MaxEmployee:     3, NeedEnergy: 60, EnergyType: EnergyTypeManuel, Icon: "🏺",
+		MaxEmployee:     3, EnergyType: EnergyTypeManuel, Icon: "🏺",
 		Description:  "Four industriel pour le frittage de poudres de silice et d'alumine en composants céramiques.",
 		StrategicTip: "La céramique est demandée pour plusieurs composants de Tier 5. Prévoyez une production constante mais modérée.",
 	},
@@ -571,7 +569,7 @@ var Items = map[string]Item{
 		ID: "precision_workshop", Name: "Atelier de Précision", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 200000, UseRecipe: "sensor_recipe", ProductionTime: 240,
 		MarketAvailable: true,
-		MaxEmployee:     6, NeedEnergy: 100, EnergyType: EnergyTypeManuel, Icon: "🔬",
+		MaxEmployee:     6, EnergyType: EnergyTypeManuel, Icon: "🔬",
 		Description:  "Atelier équipé d'outils de mesure micrométriques pour la fabrication de capteurs et d'instruments de bord.",
 		StrategicTip: "C'est la base de vos systèmes de guidage. Un atelier de précision bien approvisionné en composants électroniques est vital.",
 	},
@@ -579,7 +577,7 @@ var Items = map[string]Item{
 		ID: "rubber_factory", Name: "Usine de Caoutchouc", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 90000, UseRecipe: "rubber_recipe", ProductionTime: 90,
 		MarketAvailable: true,
-		MaxEmployee:     4, NeedEnergy: 50, EnergyType: EnergyTypeManuel, Icon: "⚫",
+		MaxEmployee:     4, EnergyType: EnergyTypeManuel, Icon: "⚫",
 		Description:  "Installation chimique pour la vulcanisation et le traitement des polymères de caoutchouc.",
 		StrategicTip: "Assurez-vous d'avoir une ligne de pétrole brut dédiée pour ne jamais manquer de caoutchouc pour vos vérins.",
 	},
@@ -587,7 +585,7 @@ var Items = map[string]Item{
 		ID: "hydraulic_press", Name: "Presse Hydraulique", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 150000, UseRecipe: "hydraulic_cylinder_recipe", ProductionTime: 150,
 		MarketAvailable: true,
-		MaxEmployee:     4, NeedEnergy: 80, EnergyType: EnergyTypeManuel, Icon: "🔧",
+		MaxEmployee:     4, EnergyType: EnergyTypeManuel, Icon: "🔧",
 		Description:  "Presse de grande puissance pour l'assemblage et le façonnage de vérins et composants lourds.",
 		StrategicTip: "Indispensable pour vos lignes d'assemblage avancées. Nécessite beaucoup de caoutchouc et d'acier.",
 	},
@@ -595,7 +593,7 @@ var Items = map[string]Item{
 		ID: "advanced_forge", Name: "Forge Avancée", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 250000, UseRecipe: "advanced_alloy_recipe", ProductionTime: 200,
 		MarketAvailable: true,
-		MaxEmployee:     5, NeedEnergy: 120, EnergyType: EnergyTypeManuel, Icon: "🔥",
+		MaxEmployee:     5, EnergyType: EnergyTypeManuel, Icon: "🔥",
 		Description:  "Unité de fusion spécialisée dans la création d'alliages de haute performance.",
 		StrategicTip: "Produit les fameuses Turbopompes. C'est le cœur de votre programme spatial, protégez sa chaîne logistique.",
 	},
@@ -607,15 +605,23 @@ var Items = map[string]Item{
 		ID: "chemical_plant", Name: "Usine Chimique", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 500000, UseRecipe: "rocket_fuel_recipe", ProductionTime: 300,
 		MarketAvailable: true,
-		MaxEmployee:     6, NeedEnergy: 150, EnergyType: EnergyTypeManuel, Icon: "⚗️",
+		MaxEmployee:     6, EnergyType: EnergyTypeManuel, Icon: "⚗️",
 		Description:  "Complexe industriel polyvalent pour la synthèse de produits chimiques complexes et de carburant de fusée.",
 		StrategicTip: "C'est ici que vous produisez votre carburant. Sa proximité avec vos sources d'oxygène et d'hydrogène est un atout majeur.",
+	},
+	"air_separator": {
+		ID: "air_separator", Name: "Séparateur Cryogénique", Type: ItemTypeMachine, Unit: UnitUnit,
+		BasePrice: 180000, Product: "nitrogen", ProductQuantity: 50, ProductionTime: 180,
+		MarketAvailable: true,
+		MaxEmployee:     4, EnergyType: EnergyTypeManuel, Icon: "❄️",
+		Description:  "Installation cryogénique qui liquéfie l'air pour isoler l'azote liquide.",
+		StrategicTip: "Garantit un flux constant d'azote liquide pour vos procédés chimiques avancés et vos besoins de refroidissement.",
 	},
 	"titanium_foundry": {
 		ID: "titanium_foundry", Name: "Fonderie de Titane", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 350000, UseRecipe: "titanium_ingot_recipe", ProductionTime: 180,
 		MarketAvailable: true,
-		MaxEmployee:     4, NeedEnergy: 100, EnergyType: EnergyTypeManuel, Icon: "🔥",
+		MaxEmployee:     4, EnergyType: EnergyTypeManuel, Icon: "🔥",
 		Description:  "Fonderie de haute technologie capable d'atteindre les températures nécessaires au raffinage du titane.",
 		StrategicTip: "Le titane est requis pour vos boucliers thermiques. Assurez-vous d'avoir un stock constant de lingots.",
 	},
@@ -626,6 +632,14 @@ var Items = map[string]Item{
 		MaxEmployee:     3, EnergyType: EnergyTypeManuel, Icon: "🔥",
 		Description:  "Installation spécialisée dans le traitement de la bauxite et la fonte de l'aluminium.",
 		StrategicTip: "Indispensable pour les structures aérospatiales. Sa production est rapide si vous avez assez de bauxite.",
+	},
+	"aluminum_mine": {
+		ID: "aluminum_mine", Name: "Mine de Bauxite", Type: ItemTypeMachine, Unit: UnitUnit,
+		BasePrice: 120000, Product: "aluminum_ore", ProductQuantity: 20, ProductionTime: 150,
+		MarketAvailable: true,
+		MaxEmployee:     4, EnergyType: EnergyTypeManuel, Icon: "/icons/mining_extractor.png",
+		Description:  "Excavatrice spécialisée pour extraire la bauxite, minerai riche en aluminium.",
+		StrategicTip: "Sécurise vos apports en bauxite pour alimenter vos fonderies d'aluminium et éviter les goulets d'étranglement.",
 	},
 	"titanium_mine": {
 		ID: "titanium_mine", Name: "Mine de Titane", Type: ItemTypeMachine, Unit: UnitUnit,
@@ -639,7 +653,7 @@ var Items = map[string]Item{
 		ID: "electrolysis_plant", Name: "Station d'Électrolyse", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 300000, UseRecipe: "electrolysis_recipe", ProductionTime: 120,
 		MarketAvailable: true,
-		MaxEmployee:     4, NeedEnergy: 200, EnergyType: EnergyTypeManuel, Icon: "⚡",
+		MaxEmployee:     4, EnergyType: EnergyTypeManuel, Icon: "⚡",
 		Description:  "Installation utilisant l'électricité pour décomposer l'eau en oxygène et hydrogène.",
 		StrategicTip: "Gros consommateur d'énergie. Assurez-vous d'avoir une infrastructure électrique solide avant d'en placer plusieurs.",
 	},
@@ -647,7 +661,7 @@ var Items = map[string]Item{
 		ID: "aerospace_factory", Name: "Usine Aérospatiale", Type: ItemTypeMachine, Unit: UnitUnit,
 		BasePrice: 2000000, UseRecipe: "rocket_engine_recipe", ProductionTime: 1800,
 		MarketAvailable: true,
-		MaxEmployee:     20, NeedEnergy: 500, EnergyType: EnergyTypeManuel, Icon: "🏭",
+		MaxEmployee:     20, EnergyType: EnergyTypeManuel, Icon: "🏭",
 		Description:  "Complexe de haute technologie conçu pour l'assemblage de composants aérospatiaux géants.",
 		StrategicTip: "C'est ici qu'on assemble les moteurs de fusée. Une seule usine bien approvisionnée suffit au début.",
 	},
@@ -655,7 +669,7 @@ var Items = map[string]Item{
 		ID: "rocket_launch_pad", Name: "Pas de Tir", Type: ItemTypeMachine, Unit: UnitUnit,
 		MarketAvailable: true,
 		BasePrice:       50000000, UseRecipe: "rocket_recipe", ProductionTime: 7200,
-		MaxEmployee: 50, NeedEnergy: 1000, EnergyType: EnergyTypeManuel, Icon: "🚀",
+		MaxEmployee: 50, EnergyType: EnergyTypeManuel, Icon: "🚀",
 		Description:  "Infrastructure monumentale capable de supporter l'assemblage et le lancement d'une fusée orbitale.",
 		StrategicTip: "L'aboutissement de votre empire. Nécessite des ressources colossales et une main-d'œuvre massive (50 employés).",
 	},
