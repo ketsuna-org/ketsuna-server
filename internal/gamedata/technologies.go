@@ -226,7 +226,7 @@ var Technologies = map[string]Technology{
 		Cost:         35000000, RequiredLevel: 20,
 		UnlockTime:    18000, // 5 heures
 		Prerequisites: []string{"precision_engineering"},
-		ItemUnlocked:  []string{"rubber", "rubber_factory", "sulfuric_acid", "nitrogen"},
+		ItemUnlocked:  []string{"rubber", "rubber_factory", "sulfuric_acid", "nitrogen", "air_separator"},
 		Icon:          "⚗️",
 	},
 	"advanced_metallurgy": {
@@ -250,7 +250,7 @@ var Technologies = map[string]Technology{
 		Cost:         20000000, RequiredLevel: 22,
 		UnlockTime:    25200, // 7 heures
 		Prerequisites: []string{"advanced_metallurgy"},
-		ItemUnlocked:  []string{"aluminum_ore", "aluminum_ingot", "aluminum_foundry"},
+		ItemUnlocked:  []string{"aluminum_ore", "aluminum_ingot", "aluminum_foundry", "aluminum_mine"},
 		Icon:          "⚪",
 	},
 	"titanium_metallurgy": {
